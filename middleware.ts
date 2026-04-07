@@ -4,23 +4,32 @@ import {
 } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-/** Do not block navigation longer than this waiting on Supabase (offline / bad URL). */
-const AUTH_MIDDLEWARE_MS = 1500;
+const AUTH_MS = 1500;
 
-/**
- * Refreshes the Supabase auth session when env is configured.
- * Skips when vars are unset. Times out quickly so a dead Supabase URL cannot freeze the site.
- */
+const GAME_PREFIXES = [
+  "/dashboard",
+  "/stadium",
+  "/squad",
+  "/match",
+  "/league",
+] as const;
+
+function needsTeam(path: string): boolean {
+  return GAME_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+}
+
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const path = request.nextUrl.pathname;
+
   if (!url || !key) {
     return NextResponse.next();
   }
 
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  let res = NextResponse.next({ request });
+
+  let user: { id: string } | null = null;
 
   try {
     const supabase = createServerClient(url, key, {
@@ -34,43 +43,67 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          supabaseResponse = NextResponse.next({
-            request,
-          });
+          res = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            res.cookies.set(name, value, options)
           );
         },
       },
     });
 
-    await Promise.race([
+    const raced = await Promise.race([
       supabase.auth.getUser(),
-      new Promise<void>((resolve) =>
-        setTimeout(resolve, AUTH_MIDDLEWARE_MS)
-      ),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), AUTH_MS)),
     ]);
+    if (raced) {
+      user = raced.data.user;
+    }
+
+    if (path.startsWith("/api")) {
+      return res;
+    }
+
+    if (!user) {
+      if (
+        path === "/onboarding" ||
+        needsTeam(path)
+      ) {
+        const login = new URL("/login", request.url);
+        login.searchParams.set("next", path);
+        return NextResponse.redirect(login);
+      }
+      return res;
+    }
+
+    if (path === "/login" || path === "/signup") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    const { data: team } = await supabase
+      .from("teams")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (path === "/onboarding") {
+      if (team) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+      return res;
+    }
+
+    if (needsTeam(path) && !team) {
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
   } catch {
     return NextResponse.next();
   }
 
-  return supabaseResponse;
+  return res;
 }
 
-/**
- * Only run auth refresh where sessions matter. Skips `/`, `/api/health`, and static assets
- * so the root page cannot be affected by middleware edge cases.
- */
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/stadium/:path*",
-    "/squad/:path*",
-    "/match/:path*",
-    "/league/:path*",
-    "/api/match",
-    "/api/team",
-    "/api/upgrade",
-    "/api/league",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

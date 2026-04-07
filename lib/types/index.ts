@@ -25,7 +25,7 @@ export type Team = {
   created_at: string;
 };
 
-/** `public.players` — position: GK, DEF, MID, FWD */
+/** `public.players` — positions (QB, RB, WR, TE, OL, DL, LB, DB, K). */
 export type Player = {
   id: string;
   team_id: string;
@@ -34,7 +34,8 @@ export type Player = {
   speed: number;
   strength: number;
   passing: number;
-  shooting: number;
+  /** Receiving / ball skills. */
+  catching: number;
   stamina: number;
   /** 1 = bronze, 2 = silver, 3 = gold */
   tier: number;

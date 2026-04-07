@@ -9,7 +9,7 @@ export default function HomePage() {
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold text-white">Gridiron Dynasty</h1>
         <p className="text-zinc-400">
-          Franchise strategy game — use the nav above or jump to the hub.
+          Football franchise strategy — use the nav above or jump to the hub.
         </p>
         <p className="text-sm text-zinc-500">
           Dev server URL is printed in the terminal after{" "}

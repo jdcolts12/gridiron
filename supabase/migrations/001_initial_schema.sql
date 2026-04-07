@@ -21,11 +21,11 @@ create table public.players (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams (id) on delete cascade,
   name text not null,
-  position text not null, -- GK, DEF, MID, FWD
+  position text not null, -- Positions: QB, RB, WR, TE, OL, DL, LB, DB, K, etc.
   speed integer not null default 50,
   strength integer not null default 50,
   passing integer not null default 50,
-  shooting integer not null default 50,
+  catching integer not null default 50,
   stamina integer not null default 50,
   tier integer not null default 1, -- 1 = bronze, 2 = silver, 3 = gold
   created_at timestamptz not null default now()
