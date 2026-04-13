@@ -38,14 +38,21 @@ export default function SignupPage() {
   if (needsConfirm) {
     return (
       <div className="mx-auto max-w-sm space-y-4">
-        <h1 className="text-2xl font-semibold text-white">Check your email</h1>
+        <p className="text-xs font-medium uppercase tracking-wider text-emerald-400/90">
+          Gridiron Dynasty
+        </p>
+        <h1 className="text-2xl font-semibold text-white">Almost in the huddle</h1>
         <p className="text-sm text-zinc-400">
-          We sent a confirmation link to <strong className="text-zinc-300">{email}</strong>.
-          After you confirm, you can{" "}
+          We sent a verification link to{" "}
+          <strong className="text-zinc-300">{email}</strong>. Open it to activate your
+          franchise account, then{" "}
           <Link href="/login" className="text-emerald-400 hover:underline">
             sign in
-          </Link>
-          .
+          </Link>{" "}
+          and build your squad.
+        </p>
+        <p className="text-xs text-zinc-600">
+          No email? Check spam or promotions — it can take a minute.
         </p>
       </div>
     );

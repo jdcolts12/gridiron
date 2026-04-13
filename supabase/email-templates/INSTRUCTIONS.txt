@@ -1,0 +1,28 @@
+Gridiron Dynasty — Supabase email templates
+============================================
+
+These HTML files are meant to be pasted into your hosted Supabase project:
+
+  Dashboard → Authentication → Email Templates
+
+Pick the matching template (Confirm signup, Magic link, Reset password), then
+paste the SUBJECT line below into "Subject" and the BODY from the .html file
+into the template editor.
+
+Templates use Go template variables from Supabase (keep them exactly as written):
+
+  {{ .ConfirmationURL }}  — required link for confirm / magic link / reset
+  {{ .Email }}            — user’s email (personalization)
+  {{ .Token }}            — optional 6-digit code if you enable email OTP flows
+  {{ .SiteURL }}          — your configured Site URL
+
+After saving, send a test signup from your app to verify layout and links.
+
+Production checklist:
+  - Site URL and redirect URLs include your live domain (e.g. Vercel URL).
+  - Confirm link still hits /auth/callback on your app.
+
+File map:
+  confirm-signup.subject.txt + confirm-signup.html  → "Confirm signup"
+  magic-link.subject.txt     + magic-link.html      → "Magic link"
+  recovery.subject.txt       + recovery.html        → "Reset password"

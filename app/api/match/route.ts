@@ -1,3 +1,4 @@
+import { buildScrimmageOpponent } from "@/lib/game/scrimmageOpponent";
 import { simulateMatch } from "@/lib/game/simulate";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -73,11 +74,15 @@ export async function GET() {
     }
 
     const enriched = list.map((m) => {
+      const kind = (m as { match_kind?: string }).match_kind;
       const oppId =
         m.home_team_id === myTeam.id ? m.away_team_id : m.home_team_id;
       return {
         ...m,
-        opponent_name: opponentNames[oppId] ?? null,
+        opponent_name:
+          kind === "scrimmage"
+            ? "Scrimmage (CPU)"
+            : (opponentNames[oppId] ?? null),
       };
     });
 
@@ -94,11 +99,10 @@ export async function GET() {
 
 /**
  * POST /api/match
- * Body: `{ opponentTeamId: string }`
+ * Body: `{ opponentTeamId: string }` **or** `{ scrimmage: true }`
  *
- * Authenticated user's team is **home**; opponent is **away**.
- * Loads squads (service role for opponent rows — set `SUPABASE_SERVICE_ROLE_KEY`),
- * runs {@link simulateMatch}, inserts into `public.matches`, returns the saved row.
+ * League: home vs away (needs `SUPABASE_SERVICE_ROLE_KEY` to load the opponent).
+ * Scrimmage: CPU opponent from your roster stats — no service role; requires DB migration `006_match_scrimmage_kind`.
  */
 export async function POST(request: Request) {
   try {
@@ -125,17 +129,33 @@ export async function POST(request: Request) {
       );
     }
 
+    const scrimmage =
+      typeof body === "object" &&
+      body !== null &&
+      "scrimmage" in body &&
+      (body as { scrimmage?: unknown }).scrimmage === true;
+
     const opponentTeamId =
       typeof body === "object" &&
       body !== null &&
       "opponentTeamId" in body &&
       typeof (body as { opponentTeamId: unknown }).opponentTeamId === "string"
-        ? (body as { opponentTeamId: string }).opponentTeamId
+        ? (body as { opponentTeamId: string }).opponentTeamId.trim()
         : null;
 
-    if (!opponentTeamId) {
+    if (scrimmage && opponentTeamId) {
       return NextResponse.json(
-        { ok: false, error: "opponentTeamId (string) is required" },
+        { ok: false, error: "Send either scrimmage: true or opponentTeamId, not both" },
+        { status: 400 }
+      );
+    }
+    if (!scrimmage && !opponentTeamId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Send opponentTeamId (string) for a league game, or { \"scrimmage\": true } vs CPU",
+        },
         { status: 400 }
       );
     }
@@ -161,11 +181,62 @@ export async function POST(request: Request) {
       );
     }
 
-    if (myTeam.id === opponentTeamId) {
+    if (!scrimmage && myTeam.id === opponentTeamId) {
       return NextResponse.json(
         { ok: false, error: "Cannot schedule a match against your own team" },
         { status: 400 }
       );
+    }
+
+    if (scrimmage) {
+      const { data: homePlayers, error: homePlayersErr } = await supabase
+        .from("players")
+        .select("*")
+        .eq("team_id", myTeam.id);
+
+      if (homePlayersErr) {
+        return NextResponse.json(
+          { ok: false, error: homePlayersErr.message },
+          { status: 500 }
+        );
+      }
+
+      const homeWithSquad = { ...myTeam, players: homePlayers ?? [] };
+      const awayWithSquad = buildScrimmageOpponent(homeWithSquad);
+      const result = simulateMatch(homeWithSquad, awayWithSquad);
+
+      let winnerId: string | null = null;
+      if (result.winnerId === myTeam.id) winnerId = myTeam.id;
+
+      const { data: matchRow, error: insertErr } = await supabase
+        .from("matches")
+        .insert({
+          home_team_id: myTeam.id,
+          away_team_id: myTeam.id,
+          home_score: result.homeScore,
+          away_score: result.awayScore,
+          winner_id: winnerId,
+          match_log: result.matchLog,
+          match_kind: "scrimmage",
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              insertErr.message +
+              (insertErr.message.includes("match_kind")
+                ? " — run Supabase migration 006_match_scrimmage_kind.sql"
+                : ""),
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, match: matchRow });
     }
 
     let admin;

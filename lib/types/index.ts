@@ -54,6 +54,8 @@ export type Match = {
   winner_id: string | null;
   match_log: Json | null;
   played_at: string;
+  /** `006_match_scrimmage_kind` — `scrimmage` uses away_team_id = home_team_id for storage */
+  match_kind?: string;
 };
 
 /** `public.player_upgrade_jobs` — timed stat training */

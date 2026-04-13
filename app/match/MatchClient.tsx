@@ -7,6 +7,10 @@ type Opponent = { id: string; name: string };
 
 type MatchRow = Match & { opponent_name?: string | null };
 
+function isScrimmageMatch(m: MatchRow): boolean {
+  return m.match_kind === "scrimmage";
+}
+
 function logLines(log: Json | null): string[] {
   if (log === null || log === undefined) return [];
   if (!Array.isArray(log)) return [String(log)];
@@ -100,6 +104,34 @@ export function MatchClient() {
   const effectiveOpponentId =
     selectedId.trim() || manualId.trim() || "";
 
+  async function playScrimmage() {
+    setPlayError(null);
+    setLastMatch(null);
+    setPlaying(true);
+    try {
+      const res = await fetch("/api/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scrimmage: true }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        match?: Match;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.match) {
+        setPlayError(data.error ?? "Scrimmage failed");
+        return;
+      }
+      setLastMatch(data.match);
+      await loadRecent();
+    } catch {
+      setPlayError("Network error");
+    } finally {
+      setPlaying(false);
+    }
+  }
+
   async function play() {
     setPlayError(null);
     setLastMatch(null);
@@ -134,6 +166,11 @@ export function MatchClient() {
 
   function resultLabel(m: MatchRow): string {
     if (!myTeamId) return "—";
+    if (isScrimmageMatch(m)) {
+      if (m.home_score > m.away_score) return "Win";
+      if (m.home_score < m.away_score) return "Loss";
+      return "Draw";
+    }
     if (m.winner_id === null) return "Draw";
     if (m.winner_id === myTeamId) return "Win";
     return "Loss";
@@ -144,14 +181,36 @@ export function MatchClient() {
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold text-white">Match</h1>
         <p className="text-sm text-zinc-400">
-          Your team is always <span className="text-zinc-300">home</span>. You
-          need <code className="text-zinc-500">SUPABASE_SERVICE_ROLE_KEY</code>{" "}
-          on the server to load opponents and simulate.
+          Your team is always <span className="text-zinc-300">home</span>.
+          <span className="block pt-1">
+            <strong className="font-medium text-zinc-300">Scrimmage</strong> runs
+            vs a CPU squad from your roster — no extra setup. League games vs
+            other users need{" "}
+            <code className="text-zinc-500">SUPABASE_SERVICE_ROLE_KEY</code> on
+            the server.
+          </span>
         </p>
       </div>
 
       <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-        <h2 className="text-sm font-medium text-zinc-300">Play a game</h2>
+        <h2 className="text-sm font-medium text-zinc-300">Scrimmage (CPU)</h2>
+        <p className="text-xs text-zinc-500">
+          Instant simulation. Apply migration{" "}
+          <code className="text-zinc-600">006_match_scrimmage_kind.sql</code> if
+          the first run errors.
+        </p>
+        <button
+          type="button"
+          onClick={() => void playScrimmage()}
+          disabled={playing}
+          className="rounded-md bg-zinc-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-600 disabled:opacity-50"
+        >
+          {playing ? "Simulating…" : "Simulate scrimmage"}
+        </button>
+      </div>
+
+      <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+        <h2 className="text-sm font-medium text-zinc-300">League — vs another team</h2>
         {oppLoading ? (
           <p className="text-sm text-zinc-500">Loading opponents…</p>
         ) : opponents.length > 0 ? (
@@ -194,7 +253,7 @@ export function MatchClient() {
           disabled={playing}
           className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:opacity-50"
         >
-          {playing ? "Simulating…" : "Simulate match"}
+          {playing ? "Simulating…" : "Simulate league match"}
         </button>
 
         {playError && (
@@ -206,7 +265,12 @@ export function MatchClient() {
 
       {lastMatch && (
         <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-          <h2 className="text-sm font-medium text-zinc-300">Result</h2>
+          <div>
+            <h2 className="text-sm font-medium text-zinc-300">Result</h2>
+            {lastMatch.match_kind === "scrimmage" && (
+              <p className="mt-0.5 text-xs text-zinc-500">Scrimmage vs CPU</p>
+            )}
+          </div>
           <p className="text-lg text-white">
             {lastMatch.home_score} – {lastMatch.away_score}
             {lastMatch.winner_id === null && (
