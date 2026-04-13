@@ -11,20 +11,60 @@ function isScrimmageMatch(m: MatchRow): boolean {
   return m.match_kind === "scrimmage";
 }
 
+function formatBroadcastLine(o: Record<string, unknown>): string[] {
+  const desc = typeof o.description === "string" ? o.description : "";
+  const q = o.quarter;
+  const c = o.clock;
+  const prefix =
+    typeof q === "number" && typeof c === "string"
+      ? `[${c} Q${q}] `
+      : typeof o.minute === "number"
+        ? `[${o.minute}] `
+        : "";
+  const lines: string[] = [`${prefix}${desc}`];
+
+  const hs = o.homeScore;
+  const as = o.awayScore;
+  const t = o.type;
+  const showBoard =
+    typeof hs === "number" &&
+    typeof as === "number" &&
+    (t === "touchdown" || t === "quarter_break" || t === "kickoff");
+
+  if (showBoard) {
+    lines.push(`HOME ${hs} — AWAY ${as}`);
+  }
+
+  return lines;
+}
+
+function logLineClass(line: string): string {
+  if (line.startsWith("HOME ") && line.includes("— AWAY"))
+    return "border-l-2 border-emerald-500/50 pl-2 text-emerald-200/95";
+  if (line.includes("⭐ Play of the Game"))
+    return "text-amber-200/95 font-medium";
+  if (line.includes("🔥 BIG PLAY") || line.includes("🔥 Momentum"))
+    return "text-amber-100/90";
+  if (line.startsWith("---"))
+    return "pt-2 text-zinc-500 font-medium";
+  return "text-zinc-400";
+}
+
 function logLines(log: Json | null): string[] {
   if (log === null || log === undefined) return [];
   if (!Array.isArray(log)) return [String(log)];
-  return log.map((e) => {
+  const out: string[] = [];
+  for (const e of log) {
     if (e && typeof e === "object") {
       const o = e as Record<string, unknown>;
       if (typeof o.description === "string") {
-        const tick =
-          typeof o.minute === "number" ? `[${o.minute}] ` : "";
-        return `${tick}${o.description}`;
+        out.push(...formatBroadcastLine(o));
+        continue;
       }
     }
-    return JSON.stringify(e);
-  });
+    out.push(JSON.stringify(e));
+  }
+  return out;
 }
 
 export function MatchClient() {
@@ -279,9 +319,11 @@ export function MatchClient() {
               </span>
             )}
           </p>
-          <div className="max-h-64 overflow-y-auto rounded border border-zinc-800 bg-zinc-950/80 p-3 font-mono text-xs text-zinc-400">
+          <div className="max-h-80 space-y-1 overflow-y-auto rounded border border-zinc-800 bg-zinc-950/80 p-3 font-mono text-xs leading-relaxed">
             {logLines(lastMatch.match_log).map((line, i) => (
-              <div key={i}>{line}</div>
+              <div key={i} className={logLineClass(line)}>
+                {line}
+              </div>
             ))}
           </div>
         </div>
