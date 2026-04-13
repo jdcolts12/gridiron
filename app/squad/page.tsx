@@ -60,7 +60,7 @@ export default async function SquadPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold text-white">Squad</h1>
         <p className="text-sm text-zinc-400">
-          Build your roster, train on timers, and climb team OVR.
+          Cards to train · Full roster for a one-screen overview.
         </p>
       </div>
 

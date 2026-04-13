@@ -211,6 +211,26 @@ export default function SquadClient({
     [players]
   );
 
+  const starterIds = useMemo(
+    () => new Set(starters.map((p) => p.id)),
+    [starters]
+  );
+
+  const rosterSorted = useMemo(
+    () =>
+      players
+        .slice()
+        .sort(
+          (a, b) =>
+            a.position.localeCompare(b.position) ||
+            playerOverall(b) - playerOverall(a) ||
+            a.name.localeCompare(b.name)
+        ),
+    [players]
+  );
+
+  const [squadView, setSquadView] = useState<"cards" | "roster">("cards");
+
   async function startUpgrade(playerId: string) {
     setBusyId(playerId);
     setBanner(null);
@@ -271,61 +291,187 @@ export default function SquadClient({
         </div>
       )}
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-white">Starting lineup</h2>
+      <div
+        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        role="tablist"
+        aria-label="Squad view"
+      >
         <p className="text-sm text-zinc-500">
-          Your best eleven by position. Tap a card to focus. Training grants +{TRAINING_DELTA.speed}{" "}
-          Speed, +{TRAINING_DELTA.strength} Strength, +{TRAINING_DELTA.passing} Play awareness, +
-          {TRAINING_DELTA.catching} Catching, +{TRAINING_DELTA.stamina} Stamina after the timer.
+          {squadView === "cards"
+            ? "Cards: train players and manage depth."
+            : "Roster: every player in one table."}
         </p>
-        {starters.length === 0 ? (
-          <p className="text-sm text-zinc-500">No starters yet.</p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {starters.map((p) => (
-              <PlayerCard
-                key={p.id}
-                player={p}
-                focused={focusId === p.id}
-                onSelect={() =>
-                  setFocusId((id) => (id === p.id ? null : p.id))
-                }
-                level={developmentLevel(p.id, jobs)}
-                activeJob={activeByPlayer.get(p.id)}
-                now={now}
-                canAfford={team.cash >= playerTrainingCostCash(p.tier)}
-                upgrading={busyId === p.id}
-                onUpgrade={() => startUpgrade(p.id)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-white">Bench</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {bench.map((p) => (
-            <PlayerCard
-              key={p.id}
-              player={p}
-              focused={focusId === p.id}
-              onSelect={() =>
-                setFocusId((id) => (id === p.id ? null : p.id))
-              }
-              level={developmentLevel(p.id, jobs)}
-              activeJob={activeByPlayer.get(p.id)}
-              now={now}
-              canAfford={team.cash >= playerTrainingCostCash(p.tier)}
-              upgrading={busyId === p.id}
-              onUpgrade={() => startUpgrade(p.id)}
-            />
-          ))}
+        <div className="inline-flex rounded-lg border border-zinc-700 bg-zinc-900/60 p-0.5">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={squadView === "cards"}
+            onClick={() => setSquadView("cards")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              squadView === "cards"
+                ? "bg-emerald-600 text-white"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Cards
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={squadView === "roster"}
+            onClick={() => setSquadView("roster")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              squadView === "roster"
+                ? "bg-emerald-600 text-white"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Full roster
+          </button>
         </div>
-        {bench.length === 0 && starters.length > 0 && (
-          <p className="text-sm text-zinc-500">No bench — full roster is starting.</p>
-        )}
-      </section>
+      </div>
+
+      {squadView === "roster" ? (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold text-white">Full roster</h2>
+          <div className="overflow-x-auto rounded-lg border border-zinc-800">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="border-b border-zinc-800 bg-zinc-900/70 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="whitespace-nowrap px-3 py-2.5">Pos</th>
+                  <th className="min-w-[8rem] px-3 py-2.5">Player</th>
+                  <th className="whitespace-nowrap px-3 py-2.5">Role</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right">OVR</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right">Spd</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right">Str</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right">Acc</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right">Cth</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right">Sta</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-center">T</th>
+                  <th className="whitespace-nowrap px-3 py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {rosterSorted.map((p) => {
+                  const ovr = playerOverall(p);
+                  const training = activeByPlayer.get(p.id);
+                  const isStarter = starterIds.has(p.id);
+                  return (
+                    <tr
+                      key={p.id}
+                      className="text-zinc-200 hover:bg-zinc-900/40"
+                    >
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-emerald-400/90">
+                        {p.position}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-white">
+                        {p.name}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-zinc-400">
+                        {isStarter ? (
+                          <span className="text-emerald-400/90">Starter</span>
+                        ) : (
+                          "Bench"
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums">
+                        {ovr}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular-nums text-zinc-300">
+                        {p.speed}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular-nums text-zinc-300">
+                        {p.strength}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular-nums text-zinc-300">
+                        {p.passing}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular-nums text-zinc-300">
+                        {p.catching}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular-nums text-zinc-300">
+                        {p.stamina}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-center text-zinc-500">
+                        {p.tier}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs text-amber-200/90">
+                        {training
+                          ? formatRemaining(training.completes_at, now)
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {rosterSorted.length === 0 && (
+            <p className="text-sm text-zinc-500">No players on this team.</p>
+          )}
+          <p className="text-xs text-zinc-600">
+            Acc = accuracy / play IQ column · Switch to Cards to start training.
+          </p>
+        </section>
+      ) : (
+        <>
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-white">Starting lineup</h2>
+            <p className="text-sm text-zinc-500">
+              Your best eleven by position. Tap a card to focus. Training grants +{TRAINING_DELTA.speed}{" "}
+              Speed, +{TRAINING_DELTA.strength} Strength, +{TRAINING_DELTA.passing} Play awareness, +
+              {TRAINING_DELTA.catching} Catching, +{TRAINING_DELTA.stamina} Stamina after the timer.
+            </p>
+            {starters.length === 0 ? (
+              <p className="text-sm text-zinc-500">No starters yet.</p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {starters.map((p) => (
+                  <PlayerCard
+                    key={p.id}
+                    player={p}
+                    focused={focusId === p.id}
+                    onSelect={() =>
+                      setFocusId((id) => (id === p.id ? null : p.id))
+                    }
+                    level={developmentLevel(p.id, jobs)}
+                    activeJob={activeByPlayer.get(p.id)}
+                    now={now}
+                    canAfford={team.cash >= playerTrainingCostCash(p.tier)}
+                    upgrading={busyId === p.id}
+                    onUpgrade={() => startUpgrade(p.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-white">Bench</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {bench.map((p) => (
+                <PlayerCard
+                  key={p.id}
+                  player={p}
+                  focused={focusId === p.id}
+                  onSelect={() =>
+                    setFocusId((id) => (id === p.id ? null : p.id))
+                  }
+                  level={developmentLevel(p.id, jobs)}
+                  activeJob={activeByPlayer.get(p.id)}
+                  now={now}
+                  canAfford={team.cash >= playerTrainingCostCash(p.tier)}
+                  upgrading={busyId === p.id}
+                  onUpgrade={() => startUpgrade(p.id)}
+                />
+              ))}
+            </div>
+            {bench.length === 0 && starters.length > 0 && (
+              <p className="text-sm text-zinc-500">No bench — full roster is starting.</p>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }
