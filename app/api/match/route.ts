@@ -4,6 +4,95 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { NextResponse } from "next/server";
 
 /**
+ * GET /api/match — recent matches involving the signed-in user’s team.
+ */
+export async function GET() {
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
+
+    if (authErr || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: myTeam, error: teamErr } = await supabase
+      .from("teams")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (teamErr) {
+      return NextResponse.json({ ok: false, error: teamErr.message }, { status: 500 });
+    }
+    if (!myTeam) {
+      return NextResponse.json({ ok: false, error: "No team" }, { status: 400 });
+    }
+
+    const { data: matches, error } = await supabase
+      .from("matches")
+      .select("*")
+      .or(
+        `home_team_id.eq.${myTeam.id},away_team_id.eq.${myTeam.id}`
+      )
+      .order("played_at", { ascending: false })
+      .limit(15);
+
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    const list = matches ?? [];
+    let opponentNames: Record<string, string> = {};
+
+    const otherIds = Array.from(
+      new Set(
+        list.flatMap((m) =>
+          m.home_team_id === myTeam.id
+            ? [m.away_team_id]
+            : [m.home_team_id]
+        )
+      )
+    );
+
+    if (otherIds.length > 0) {
+      try {
+        const admin = createServiceClient();
+        const { data: nameRows } = await admin
+          .from("teams")
+          .select("id, name")
+          .in("id", otherIds);
+        opponentNames = Object.fromEntries(
+          (nameRows ?? []).map((t) => [t.id, t.name])
+        );
+      } catch {
+        /* no service key — omit names */
+      }
+    }
+
+    const enriched = list.map((m) => {
+      const oppId =
+        m.home_team_id === myTeam.id ? m.away_team_id : m.home_team_id;
+      return {
+        ...m,
+        opponent_name: opponentNames[oppId] ?? null,
+      };
+    });
+
+    return NextResponse.json({
+      ok: true,
+      teamId: myTeam.id,
+      matches: enriched,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+/**
  * POST /api/match
  * Body: `{ opponentTeamId: string }`
  *
@@ -156,6 +245,25 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    const homeDelta =
+      result.winnerId === myTeam.id ? 3 : result.winnerId === null ? 1 : 0;
+    const awayDelta =
+      result.winnerId === opponentTeamId ? 3 : result.winnerId === null ? 1 : 0;
+
+    await admin
+      .from("teams")
+      .update({
+        league_points: (myTeam.league_points ?? 0) + homeDelta,
+      })
+      .eq("id", myTeam.id);
+
+    await admin
+      .from("teams")
+      .update({
+        league_points: (oppTeam.league_points ?? 0) + awayDelta,
+      })
+      .eq("id", opponentTeamId);
 
     return NextResponse.json({ ok: true, match: matchRow });
   } catch (e) {
