@@ -3,10 +3,13 @@
 import { formatDollars } from "@/lib/format/money";
 import {
   clampStadiumLevel,
+  HOME_FIELD_ADVANTAGE_TOOLTIP,
+  homeFieldAdvantagePercent,
   previewStadiumUpgrades,
+  stadiumCrowdNoiseLabel,
   stadiumDailyIncomeCash,
   stadiumFanCapacity,
-  stadiumPerformanceMultiplier,
+  stadiumTierName,
   stadiumUpgradeCostCash,
   stadiumUpgradeDurationMs,
   STADIUM_MAX_LEVEL,
@@ -68,7 +71,7 @@ export function StadiumClient({
   const [tick, setTick] = useState(0);
   const [incomeNote, setIncomeNote] = useState<string | null>(
     initialIncomeApplied > 0
-      ? `+${formatDollars(initialIncomeApplied)} stadium income credited`
+      ? `+${formatDollars(initialIncomeApplied)} ticket revenue collected`
       : null
   );
 
@@ -83,7 +86,7 @@ export function StadiumClient({
     setActiveUpgrade(data.activeUpgrade ?? null);
     if (data.income_applied && data.income_applied > 0) {
       setIncomeNote(
-        `+${formatDollars(data.income_applied)} stadium income credited`
+        `+${formatDollars(data.income_applied)} ticket revenue collected`
       );
     }
   }, []);
@@ -136,24 +139,63 @@ export function StadiumClient({
   const nextIncome = atMax
     ? stadium.daily_income_cash
     : stadiumDailyIncomeCash(lv + 1);
-  const nextPerf = atMax
-    ? stadium.performance_multiplier
-    : stadiumPerformanceMultiplier(lv + 1);
+  const nextHfa = atMax
+    ? stadium.home_field_advantage_percent
+    : homeFieldAdvantagePercent(lv + 1);
+  const nextCrowd = atMax
+    ? stadium.crowd_noise_label
+    : stadiumCrowdNoiseLabel(lv + 1);
+
+  const upgradeTargetName = activeUpgrade
+    ? stadiumTierName(activeUpgrade.to_level)
+    : null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white">Stadium</h1>
-        <p className="text-sm text-zinc-400">
-          {team.name} ·{" "}
-          <span className="text-zinc-200">{formatDollars(team.cash)}</span>
+    <div className="mx-auto max-w-3xl space-y-8">
+      <header className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Franchise · Stadium
+            </p>
+            <h1 className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-2xl font-bold leading-tight text-white sm:text-3xl">
+              <span className="shrink-0" aria-hidden>
+                🏟️
+              </span>
+              <span className="text-zinc-200">Your Stadium:</span>
+              <span className="text-emerald-400">{stadium.tier_name}</span>
+            </h1>
+            <p className="text-sm text-zinc-400">
+              Level{" "}
+              <span className="font-mono text-zinc-200">{stadium.level}</span>
+              <span className="text-zinc-500"> / {STADIUM_MAX_LEVEL}</span>
+              <span className="text-zinc-600"> · </span>
+              {team.name}
+              <span className="text-zinc-600"> · </span>
+              <span className="text-zinc-200">{formatDollars(team.cash)}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={atMax || !!activeUpgrade || team.cash < nextCost || busy}
+            onClick={() => void startUpgrade()}
+            className="shrink-0 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy
+              ? "Starting…"
+              : atMax
+                ? "Stadium maxed"
+                : activeUpgrade
+                  ? "Expansion running"
+                  : `Expand · ${formatDollars(nextCost)} · ${formatDurationMs(nextDuration)}`}
+          </button>
+        </div>
+        <p className="text-sm leading-relaxed text-zinc-500">
+          Pack the stands, sell tickets, and crank the crowd until visiting teams
+          can&apos;t hear the snap. Bigger venues take real money and construction
+          time—each expansion level is a new chapter for your franchise.
         </p>
-        <p className="text-sm text-zinc-500">
-          Levels 1–10. Each level raises fan capacity, daily passive income, and
-          home defensive performance in match simulations. Upgrades cost dollars
-          and finish after a real-time timer.
-        </p>
-      </div>
+      </header>
 
       {incomeNote && (
         <p
@@ -165,15 +207,24 @@ export function StadiumClient({
       )}
 
       {activeUpgrade && (
-        <div className="rounded-xl border border-amber-800/50 bg-amber-950/25 p-4">
-          <h2 className="text-sm font-medium text-amber-200">Upgrade in progress</h2>
+        <div className="rounded-xl border border-amber-800/50 bg-gradient-to-br from-amber-950/40 to-zinc-950/80 p-4">
+          <h2 className="text-sm font-semibold text-amber-200">
+            🏗️ Expansion in progress
+          </h2>
           <p className="mt-2 text-sm text-zinc-300">
-            Expanding to level{" "}
-            <span className="font-mono text-white">{activeUpgrade.to_level}</span>
-            · {formatRemaining(activeUpgrade.completes_at, tick)} remaining
+            Building toward{" "}
+            <span className="font-medium text-white">
+              {upgradeTargetName ?? `level ${activeUpgrade.to_level}`}
+            </span>{" "}
+            <span className="text-zinc-500">
+              (level {activeUpgrade.to_level})
+            </span>
+            <span className="text-zinc-600"> · </span>
+            {formatRemaining(activeUpgrade.completes_at, tick)} left on the clock
           </p>
           <p className="mt-1 text-xs text-zinc-500">
-            You keep current bonuses until the timer completes.
+            Current ticket sales and home-field edge stay in place until the job
+            wraps.
           </p>
         </div>
       )}
@@ -184,105 +235,121 @@ export function StadiumClient({
         </p>
       )}
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Current level
-            </p>
-            <p className="mt-1 text-4xl font-semibold tabular-nums text-white">
-              {stadium.level}
-              <span className="text-lg font-normal text-zinc-500">
-                {" "}
-                / {STADIUM_MAX_LEVEL}
-              </span>
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={atMax || !!activeUpgrade || team.cash < nextCost || busy}
-            onClick={() => void startUpgrade()}
-            className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {busy
-              ? "Starting…"
-              : atMax
-                ? "Max level"
-                : activeUpgrade
-                  ? "Upgrade running"
-                  : `Upgrade · ${formatDollars(nextCost)} · ${formatDurationMs(nextDuration)}`}
-          </button>
-        </div>
-
-        <dl className="mt-6 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
-            <dt className="text-xs text-zinc-500">Fan capacity</dt>
-            <dd className="mt-1 text-lg font-medium tabular-nums text-zinc-100">
+      <section className="rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/90 p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Gameday impact
+        </h2>
+        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-4 py-3">
+            <dt className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+              <span aria-hidden>💺</span> Stadium capacity
+            </dt>
+            <dd className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">
               {stadium.fan_capacity.toLocaleString()}
             </dd>
             {!atMax && (
-              <dd className="mt-0.5 text-xs text-emerald-400/80">
-                → {nextFan.toLocaleString()} at Lv {lv + 1}
+              <dd className="mt-1 text-xs text-emerald-400/85">
+                Next: {nextFan.toLocaleString()} seats at {stadiumTierName(lv + 1)}
               </dd>
             )}
           </div>
-          <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
-            <dt className="text-xs text-zinc-500">Income / day</dt>
-            <dd className="mt-1 text-lg font-medium tabular-nums text-zinc-100">
-              {formatDollars(stadium.daily_income_cash)}/day
+          <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-4 py-3">
+            <dt className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+              <span aria-hidden>💰</span> Ticket revenue / day
+            </dt>
+            <dd className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">
+              {formatDollars(stadium.daily_income_cash)}
             </dd>
             {!atMax && (
-              <dd className="mt-0.5 text-xs text-emerald-400/80">
-                → {formatDollars(nextIncome)}/day at Lv {lv + 1}
+              <dd className="mt-1 text-xs text-emerald-400/85">
+                Next: {formatDollars(nextIncome)} / day
               </dd>
             )}
           </div>
-          <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
-            <dt className="text-xs text-zinc-500">Home defense (sim)</dt>
-            <dd className="mt-1 text-lg font-medium tabular-nums text-emerald-400/90">
-              ×{stadium.performance_multiplier.toFixed(2)}
+          <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-4 py-3">
+            <dt className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+              <span aria-hidden>🏟️</span>
+              <span
+                className="cursor-help border-b border-dotted border-zinc-500"
+                title={HOME_FIELD_ADVANTAGE_TOOLTIP}
+              >
+                Home field advantage
+              </span>
+            </dt>
+            <dd
+              className="mt-1 text-xl font-semibold tabular-nums text-emerald-400/95"
+              title={HOME_FIELD_ADVANTAGE_TOOLTIP}
+            >
+              +{stadium.home_field_advantage_percent}%
             </dd>
             {!atMax && (
-              <dd className="mt-0.5 text-xs text-emerald-400/80">
-                → ×{nextPerf.toFixed(2)} at Lv {lv + 1}
+              <dd className="mt-1 text-xs text-emerald-400/85">
+                Next: +{nextHfa}%
+              </dd>
+            )}
+          </div>
+          <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-4 py-3">
+            <dt className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+              <span aria-hidden>🔊</span> Crowd noise
+            </dt>
+            <dd className="mt-1 text-lg font-semibold text-amber-200/95">
+              {stadium.crowd_noise_label}
+            </dd>
+            <dd className="mt-0.5 text-xs text-zinc-500">
+              Road mistakes, false starts, shanked kicks—the rowdier it gets, the
+              worse it is for them (coming soon in sim).
+            </dd>
+            {!atMax && (
+              <dd className="mt-1 text-xs text-emerald-400/85">
+                Next: {nextCrowd}
               </dd>
             )}
           </div>
         </dl>
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Upgrade roadmap
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+          <span aria-hidden>🏟️</span> Stadium expansion plan
         </h2>
         <p className="text-xs text-zinc-600">
-          Each row is one paid upgrade job. Income is credited in full-day chunks
-          when you load the stadium or hub (up to 14 days backlog).
+          Each row is one construction project. Ticket money pays out in full-day
+          chunks when you hit the stadium or hub (up to 14 days banked).
         </p>
         <div className="overflow-x-auto rounded-lg border border-zinc-800">
-          <table className="w-full min-w-[480px] text-left text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-900/60 text-xs text-zinc-400">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="border-b border-zinc-800 bg-zinc-900/70 text-xs text-zinc-400">
               <tr>
-                <th className="px-3 py-2 font-medium">Reach Lv</th>
-                <th className="px-3 py-2 font-medium">Fans</th>
-                <th className="px-3 py-2 font-medium">Per day</th>
-                <th className="px-3 py-2 font-medium">Def ×</th>
+                <th className="px-3 py-2 font-medium">Venue</th>
+                <th className="px-3 py-2 font-medium">💺 Seats</th>
+                <th className="px-3 py-2 font-medium">💰 Tickets</th>
+                <th className="px-3 py-2 font-medium">🏟️ HFA</th>
+                <th className="px-3 py-2 font-medium">🔊 Crowd</th>
                 <th className="px-3 py-2 font-medium text-right">Cost</th>
-                <th className="px-3 py-2 font-medium text-right">Timer</th>
+                <th className="px-3 py-2 font-medium text-right">Build</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800 text-zinc-300">
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-4 text-center text-zinc-500">
-                    Stadium is maxed out.
+                  <td
+                    colSpan={7}
+                    className="px-3 py-4 text-center text-zinc-500"
+                  >
+                    You&apos;ve maxed the dynasty stadium. Time to defend the
+                    house.
                   </td>
                 </tr>
               ) : (
                 previewRows.map((row) => (
-                  <tr key={row.to_level}>
-                    <td className="px-3 py-2 font-mono text-zinc-200">
-                      {row.to_level}
+                  <tr key={row.to_level} className="hover:bg-zinc-900/40">
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-zinc-100">
+                        {row.tier_name}
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        Level {row.to_level}
+                      </div>
                     </td>
                     <td className="px-3 py-2 tabular-nums">
                       {row.fan_capacity.toLocaleString()}
@@ -290,8 +357,11 @@ export function StadiumClient({
                     <td className="px-3 py-2 tabular-nums">
                       {formatDollars(row.daily_income_cash)}
                     </td>
-                    <td className="px-3 py-2 font-mono text-emerald-400/90">
-                      ×{row.performance_multiplier.toFixed(2)}
+                    <td className="px-3 py-2 font-medium text-emerald-400/90">
+                      +{row.home_field_advantage_percent}%
+                    </td>
+                    <td className="px-3 py-2 text-sm text-amber-200/90">
+                      {row.crowd_noise_label}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatDollars(row.cost_cash)}

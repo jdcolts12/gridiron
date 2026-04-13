@@ -17,7 +17,7 @@ export function facilityMultiplier(type: FacilityType, level: number): number {
 export function facilityEffectTitle(type: FacilityType): string {
   switch (type) {
     case "stadium":
-      return "Home defense";
+      return "Home field advantage";
     case "training":
       return "Trench / line";
     case "coaching":
@@ -29,7 +29,7 @@ export function facilityEffectTitle(type: FacilityType): string {
 export function facilityEffectDescription(type: FacilityType): string {
   switch (type) {
     case "stadium":
-      return "Multiplies defensive front ratings when you are the home team.";
+      return "Home crowd lifts your defense when you host games.";
     case "training":
       return "Multiplies offensive line trench rating (field position / run setup).";
     case "coaching":
