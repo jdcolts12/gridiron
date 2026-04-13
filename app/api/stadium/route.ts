@@ -1,3 +1,4 @@
+import { formatDollars } from "@/lib/format/money";
 import {
   buildStadiumState,
   clampStadiumLevel,
@@ -89,7 +90,10 @@ export async function POST() {
     const cost = stadiumUpgradeCostCash(level);
     if (team.cash < cost) {
       return NextResponse.json(
-        { ok: false, error: `Need ${cost} cash (have ${team.cash})` },
+        {
+          ok: false,
+          error: `Need ${formatDollars(cost)} (you have ${formatDollars(team.cash)})`,
+        },
         { status: 400 }
       );
     }
@@ -107,7 +111,10 @@ export async function POST() {
 
     if (cashErr || !cashRow) {
       return NextResponse.json(
-        { ok: false, error: "Could not reserve cash; refresh and try again." },
+        {
+          ok: false,
+          error: "Could not reserve funds; refresh and try again.",
+        },
         { status: 409 }
       );
     }

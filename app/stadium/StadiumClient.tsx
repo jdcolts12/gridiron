@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDollars } from "@/lib/format/money";
 import {
   clampStadiumLevel,
   previewStadiumUpgrades,
@@ -67,7 +68,7 @@ export function StadiumClient({
   const [tick, setTick] = useState(0);
   const [incomeNote, setIncomeNote] = useState<string | null>(
     initialIncomeApplied > 0
-      ? `+${initialIncomeApplied.toLocaleString()} stadium income credited`
+      ? `+${formatDollars(initialIncomeApplied)} stadium income credited`
       : null
   );
 
@@ -82,7 +83,7 @@ export function StadiumClient({
     setActiveUpgrade(data.activeUpgrade ?? null);
     if (data.income_applied && data.income_applied > 0) {
       setIncomeNote(
-        `+${data.income_applied.toLocaleString()} stadium income credited`
+        `+${formatDollars(data.income_applied)} stadium income credited`
       );
     }
   }, []);
@@ -144,12 +145,12 @@ export function StadiumClient({
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold text-white">Stadium</h1>
         <p className="text-sm text-zinc-400">
-          {team.name} · Cash{" "}
-          <span className="text-zinc-200">{team.cash.toLocaleString()}</span>
+          {team.name} ·{" "}
+          <span className="text-zinc-200">{formatDollars(team.cash)}</span>
         </p>
         <p className="text-sm text-zinc-500">
           Levels 1–10. Each level raises fan capacity, daily passive income, and
-          home defensive performance in match simulations. Upgrades cost cash
+          home defensive performance in match simulations. Upgrades cost dollars
           and finish after a real-time timer.
         </p>
       </div>
@@ -209,7 +210,7 @@ export function StadiumClient({
                 ? "Max level"
                 : activeUpgrade
                   ? "Upgrade running"
-                  : `Upgrade · ${nextCost.toLocaleString()} · ${formatDurationMs(nextDuration)}`}
+                  : `Upgrade · ${formatDollars(nextCost)} · ${formatDurationMs(nextDuration)}`}
           </button>
         </div>
 
@@ -228,11 +229,11 @@ export function StadiumClient({
           <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
             <dt className="text-xs text-zinc-500">Income / day</dt>
             <dd className="mt-1 text-lg font-medium tabular-nums text-zinc-100">
-              {stadium.daily_income_cash.toLocaleString()} cash
+              {formatDollars(stadium.daily_income_cash)}/day
             </dd>
             {!atMax && (
               <dd className="mt-0.5 text-xs text-emerald-400/80">
-                → {nextIncome.toLocaleString()} at Lv {lv + 1}
+                → {formatDollars(nextIncome)}/day at Lv {lv + 1}
               </dd>
             )}
           </div>
@@ -264,7 +265,7 @@ export function StadiumClient({
               <tr>
                 <th className="px-3 py-2 font-medium">Reach Lv</th>
                 <th className="px-3 py-2 font-medium">Fans</th>
-                <th className="px-3 py-2 font-medium">$/day</th>
+                <th className="px-3 py-2 font-medium">Per day</th>
                 <th className="px-3 py-2 font-medium">Def ×</th>
                 <th className="px-3 py-2 font-medium text-right">Cost</th>
                 <th className="px-3 py-2 font-medium text-right">Timer</th>
@@ -287,13 +288,13 @@ export function StadiumClient({
                       {row.fan_capacity.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 tabular-nums">
-                      {row.daily_income_cash.toLocaleString()}
+                      {formatDollars(row.daily_income_cash)}
                     </td>
                     <td className="px-3 py-2 font-mono text-emerald-400/90">
                       ×{row.performance_multiplier.toFixed(2)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {row.cost_cash.toLocaleString()}
+                      {formatDollars(row.cost_cash)}
                     </td>
                     <td className="px-3 py-2 text-right text-zinc-500">
                       {formatDurationMs(row.duration_ms)}

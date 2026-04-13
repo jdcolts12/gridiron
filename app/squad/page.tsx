@@ -1,3 +1,4 @@
+import { formatDollars } from "@/lib/format/money";
 import { createClient } from "@/lib/supabase/server";
 import type { Player, Team } from "@/lib/types";
 import { redirect } from "next/navigation";
@@ -42,7 +43,7 @@ export default async function SquadPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold text-white">Squad</h1>
         <p className="text-sm text-zinc-400">
-          {team.name} · Cash {team.cash} · Gems {team.gems}
+          {team.name} · {formatDollars(team.cash)} · Gems {team.gems}
         </p>
       </div>
 

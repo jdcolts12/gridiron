@@ -1,3 +1,4 @@
+import { formatDollars } from "@/lib/format/money";
 import { summarizeTeamRecord } from "@/lib/game/league";
 import { clampStadiumLevel, stadiumDailyIncomeCash } from "@/lib/game/stadium";
 import { getStadiumSession } from "@/lib/game/stadiumSession";
@@ -62,12 +63,12 @@ export default async function DashboardPage() {
       : `${rec.wins}–${rec.losses}–${rec.draws} (${(rec.win_pct * 100).toFixed(1)}%)`;
 
   const cards = [
-    { label: "Cash", value: team.cash.toLocaleString() },
+    { label: "Balance", value: formatDollars(team.cash) },
     { label: "Gems", value: team.gems.toLocaleString() },
     { label: "Record", value: recordLabel },
     {
       label: "Stadium",
-      value: `Lv ${sLv} · ${stadiumDailyIncomeCash(sLv).toLocaleString()}/day`,
+      value: `Lv ${sLv} · ${formatDollars(stadiumDailyIncomeCash(sLv))}/day`,
     },
     { label: "Training", value: `Lv ${team.training_level}` },
     { label: "Coaching", value: `Lv ${team.coaching_level}` },
