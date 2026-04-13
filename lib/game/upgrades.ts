@@ -1,3 +1,4 @@
+import { facilityMultiplier } from "@/lib/game/facilityBonuses";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Team } from "@/lib/types";
 
@@ -36,6 +37,38 @@ export function upgradeCostCash(fromLevel: number): number {
 /** Wall-clock duration before the level applies. */
 export function upgradeDurationMs(fromLevel: number): number {
   return 45_000 + fromLevel * 30_000;
+}
+
+/** How many upcoming steps to show on the stadium roadmap UI. */
+export const FACILITY_PREVIEW_STEPS = 6;
+
+export type FacilityPreviewRow = {
+  toLevel: number;
+  cost: number;
+  durationMs: number;
+  /** Simulator power multiplier once this level is reached. */
+  multiplier: number;
+};
+
+/** Next `stepCount` single-step upgrades from `currentLevel` (capped at max level). */
+export function previewFacilityUpgrades(
+  type: FacilityType,
+  currentLevel: number,
+  stepCount: number
+): FacilityPreviewRow[] {
+  const out: FacilityPreviewRow[] = [];
+  for (let i = 1; i <= stepCount; i++) {
+    const toLevel = currentLevel + i;
+    if (toLevel > MAX_FACILITY_LEVEL) break;
+    const fromLevel = toLevel - 1;
+    out.push({
+      toLevel,
+      cost: upgradeCostCash(fromLevel),
+      durationMs: upgradeDurationMs(fromLevel),
+      multiplier: facilityMultiplier(type, toLevel),
+    });
+  }
+  return out;
 }
 
 /**

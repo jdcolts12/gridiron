@@ -1,3 +1,4 @@
+import { FACILITY_BONUS_RATE } from "@/lib/game/facilityBonuses";
 import type { Player, Team } from "@/lib/types";
 
 /** Team row plus full squad for power calculations and event attribution. */
@@ -93,7 +94,7 @@ function computePowers(
   const trench = players.filter(isTrench);
 
   const attackBase = avg(off.map(offensiveContribution));
-  const coachingBonus = 1 + team.coaching_level * 0.05;
+  const coachingBonus = 1 + team.coaching_level * FACILITY_BONUS_RATE.coaching;
   let attack = attackBase * coachingBonus;
   if (
     (trenchWinner === "home" && side === "home") ||
@@ -103,11 +104,11 @@ function computePowers(
   }
 
   const defenseBase = avg(def.map((p) => p.strength + p.stamina));
-  const stadiumBonus = 1 + team.stadium_level * 0.03;
+  const stadiumBonus = 1 + team.stadium_level * FACILITY_BONUS_RATE.stadium;
   const defense = defenseBase * stadiumBonus;
 
   const trenchBase = avg(trench.map((p) => p.passing + p.stamina));
-  const trainingBonus = 1 + team.training_level * 0.04;
+  const trainingBonus = 1 + team.training_level * FACILITY_BONUS_RATE.training;
   const trenchRating = trenchBase * trainingBonus;
 
   return { attack, defense, trench: trenchRating };
