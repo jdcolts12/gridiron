@@ -70,6 +70,65 @@ function rng(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function clampStat(v: number): number {
+  return Math.max(40, Math.min(72, v));
+}
+
+function buildPositionStats(position: string) {
+  const base = {
+    speed: rng(48, 62),
+    strength: rng(48, 62),
+    passing: rng(48, 62),
+    catching: rng(48, 62),
+    stamina: rng(52, 68),
+  };
+
+  const p = position.toUpperCase();
+  if (p === "QB") {
+    base.passing += 8;
+    base.strength += 3;
+    base.catching -= 4;
+  } else if (p === "RB") {
+    base.speed += 5;
+    base.strength += 4;
+    base.passing -= 4;
+  } else if (p === "WR") {
+    base.speed += 6;
+    base.catching += 7;
+    base.strength -= 2;
+  } else if (p === "TE") {
+    base.strength += 6;
+    base.catching += 4;
+    base.speed -= 1;
+  } else if (p === "OL") {
+    base.strength += 9;
+    base.passing += 2;
+    base.speed -= 6;
+    base.catching -= 4;
+  } else if (p === "DL") {
+    base.strength += 8;
+    base.speed += 2;
+    base.catching -= 3;
+  } else if (p === "LB") {
+    base.strength += 5;
+    base.speed += 4;
+    base.passing += 2;
+  } else if (p === "DB") {
+    base.speed += 7;
+    base.passing += 4;
+    base.catching += 4;
+    base.strength -= 2;
+  }
+
+  return {
+    speed: clampStat(base.speed),
+    strength: clampStat(base.strength),
+    passing: clampStat(base.passing),
+    catching: clampStat(base.catching),
+    stamina: clampStat(base.stamina),
+  };
+}
+
 /**
  * Builds insert rows for `public.players` (no ids — DB default).
  */
@@ -86,15 +145,16 @@ export function buildStarterPlayers(teamId: string): PlayerInsert[] {
         break;
       }
     }
+    const stats = buildPositionStats(slot.position);
     return {
       team_id: teamId,
       name,
       position: slot.position,
-      speed: rng(45, 65),
-      strength: rng(45, 65),
-      passing: rng(45, 65),
-      catching: rng(45, 65),
-      stamina: rng(50, 70),
+      speed: stats.speed,
+      strength: stats.strength,
+      passing: stats.passing,
+      catching: stats.catching,
+      stamina: stats.stamina,
       tier: 1,
     };
   });

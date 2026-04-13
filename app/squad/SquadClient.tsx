@@ -11,7 +11,7 @@ import {
   TRAINING_DELTA,
 } from "@/lib/game/squadHelpers";
 import type { Player, PlayerUpgradeJob, Team } from "@/lib/types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   initialTeam: Team;
@@ -19,6 +19,84 @@ type Props = {
   initialJobs: PlayerUpgradeJob[];
   initialTeamOvr: number;
 };
+
+type AttributeView = {
+  key: "speed" | "strength" | "passing" | "catching" | "stamina";
+  label: string;
+  emoji: string;
+};
+
+const ATTRIBUTES_BY_POSITION: Record<string, AttributeView[]> = {
+  QB: [
+    { key: "passing", label: "Accuracy", emoji: "🎯" },
+    { key: "strength", label: "Throw power", emoji: "💥" },
+    { key: "speed", label: "Mobility", emoji: "🏃" },
+    { key: "catching", label: "Ball security", emoji: "🛡️" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+  RB: [
+    { key: "speed", label: "Burst", emoji: "⚡" },
+    { key: "strength", label: "Power", emoji: "💪" },
+    { key: "catching", label: "Hands", emoji: "🧤" },
+    { key: "passing", label: "Vision", emoji: "🧠" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+  WR: [
+    { key: "speed", label: "Speed", emoji: "⚡" },
+    { key: "catching", label: "Route hands", emoji: "🧤" },
+    { key: "passing", label: "Separation IQ", emoji: "🧠" },
+    { key: "strength", label: "Physicality", emoji: "💪" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+  TE: [
+    { key: "catching", label: "Receiving", emoji: "🧤" },
+    { key: "strength", label: "Blocking", emoji: "🧱" },
+    { key: "speed", label: "Speed", emoji: "⚡" },
+    { key: "passing", label: "Awareness", emoji: "🧠" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+  OL: [
+    { key: "strength", label: "Block strength", emoji: "🧱" },
+    { key: "passing", label: "Protection IQ", emoji: "🧠" },
+    { key: "stamina", label: "Endurance", emoji: "🔋" },
+    { key: "speed", label: "Footwork", emoji: "🦶" },
+    { key: "catching", label: "Recovery", emoji: "🛡️" },
+  ],
+  DL: [
+    { key: "strength", label: "Power", emoji: "💪" },
+    { key: "speed", label: "First step", emoji: "💨" },
+    { key: "passing", label: "Read react", emoji: "🧠" },
+    { key: "catching", label: "Wrap-up", emoji: "🫱" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+  LB: [
+    { key: "strength", label: "Hit power", emoji: "💪" },
+    { key: "speed", label: "Sideline speed", emoji: "⚡" },
+    { key: "passing", label: "Play read", emoji: "🧠" },
+    { key: "catching", label: "Tackle form", emoji: "🧱" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+  DB: [
+    { key: "speed", label: "Coverage speed", emoji: "⚡" },
+    { key: "passing", label: "Play awareness", emoji: "🧠" },
+    { key: "catching", label: "Ball skills", emoji: "🧤" },
+    { key: "strength", label: "Press strength", emoji: "💪" },
+    { key: "stamina", label: "Stamina", emoji: "🔋" },
+  ],
+};
+
+function attributesForPosition(position: string): AttributeView[] {
+  const key = position.trim().toUpperCase();
+  return (
+    ATTRIBUTES_BY_POSITION[key] ?? [
+      { key: "speed", label: "Speed", emoji: "⚡" },
+      { key: "strength", label: "Strength", emoji: "💪" },
+      { key: "passing", label: "Play awareness", emoji: "🧠" },
+      { key: "catching", label: "Ball skill", emoji: "🧤" },
+      { key: "stamina", label: "Stamina", emoji: "🔋" },
+    ]
+  );
+}
 
 function developmentLevel(playerId: string, jobs: PlayerUpgradeJob[]): number {
   return 1 + jobs.filter((j) => j.completed && j.player_id === playerId).length;
@@ -51,7 +129,9 @@ export default function SquadClient({
   const [focusId, setFocusId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [, setTick] = useState(0);
+  const latestPlayerNames = useRef<Map<string, string>>(new Map());
 
   const now = Date.now();
 
@@ -64,6 +144,10 @@ export default function SquadClient({
     return m;
   }, [jobs]);
 
+  useEffect(() => {
+    latestPlayerNames.current = new Map(players.map((p) => [p.id, p.name]));
+  }, [players]);
+
   const hasIncompleteTraining = activeByPlayer.size > 0;
 
   useEffect(() => {
@@ -73,6 +157,7 @@ export default function SquadClient({
   }, [hasIncompleteTraining]);
 
   const refresh = useCallback(async () => {
+    const previousJobs = jobs;
     const res = await fetch("/api/squad", { cache: "no-store" });
     const data = (await res.json()) as {
       ok?: boolean;
@@ -88,16 +173,38 @@ export default function SquadClient({
     }
     setTeam(data.team);
     setPlayers(data.players);
-    setJobs(data.jobs ?? []);
+    const nextJobs = data.jobs ?? [];
+    setJobs(nextJobs);
     if (typeof data.team_ovr === "number") setTeamOvr(data.team_ovr);
     setBanner(null);
-  }, []);
+
+    const prevActive = new Map(
+      previousJobs
+        .filter((j) => !j.completed)
+        .map((j) => [j.id, j.player_id])
+    );
+    const completedNow = nextJobs.filter((j) => j.completed && prevActive.has(j.id));
+    if (completedNow.length > 0) {
+      const names = completedNow
+        .map((j) => latestPlayerNames.current.get(j.player_id) ?? "Player")
+        .slice(0, 2)
+        .join(", ");
+      const suffix = completedNow.length > 2 ? ` +${completedNow.length - 2} more` : "";
+      setToast(`Training complete: ${names}${suffix}`);
+    }
+  }, [jobs]);
 
   useEffect(() => {
     if (!hasIncompleteTraining) return;
     const id = window.setInterval(refresh, 8000);
     return () => window.clearInterval(id);
   }, [hasIncompleteTraining, refresh]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [toast]);
 
   const { starters, bench } = useMemo(
     () => computeDepthChart(players),
@@ -152,6 +259,15 @@ export default function SquadClient({
           role="status"
         >
           {banner}
+        </div>
+      )}
+
+      {toast && (
+        <div
+          className="rounded-lg border border-emerald-500/40 bg-emerald-950/50 px-4 py-3 text-sm text-emerald-100"
+          role="status"
+        >
+          {toast}
         </div>
       )}
 
@@ -279,11 +395,16 @@ function PlayerCard({
       </p>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-        <Stat label="Speed" emoji="⚡" value={p.speed} />
-        <Stat label="Strength" emoji="💪" value={p.strength} />
-        <Stat label="Play awareness" emoji="🧠" value={p.passing} />
-        <Stat label="Catching" emoji="🧤" value={p.catching} />
-        <Stat label="Stamina" emoji="🔋" value={p.stamina} className="col-span-2" />
+        {attributesForPosition(p.position).map((attr, i) => (
+          <Stat
+            key={attr.key}
+            label={attr.label}
+            emoji={attr.emoji}
+            value={p[attr.key]}
+            gain={TRAINING_DELTA[attr.key]}
+            className={i === 4 ? "col-span-2" : ""}
+          />
+        ))}
       </dl>
 
       <div className="mt-4 border-t border-zinc-800 pt-4">
@@ -318,11 +439,13 @@ function Stat({
   label,
   emoji,
   value,
+  gain,
   className = "",
 }: {
   label: string;
   emoji: string;
   value: number;
+  gain: number;
   className?: string;
 }) {
   return (
@@ -332,6 +455,7 @@ function Stat({
       </dt>
       <dd className="font-mono text-base font-medium tabular-nums text-zinc-100">
         {value}
+        <span className="ml-1 text-xs text-emerald-400">+{gain}</span>
       </dd>
     </div>
   );
