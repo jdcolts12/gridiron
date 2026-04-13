@@ -1,6 +1,8 @@
 import { summarizeTeamRecord } from "@/lib/game/league";
+import { clampStadiumLevel, stadiumDailyIncomeCash } from "@/lib/game/stadium";
+import { getStadiumSession } from "@/lib/game/stadiumSession";
 import { createClient } from "@/lib/supabase/server";
-import type { Match, Team } from "@/lib/types";
+import type { Match } from "@/lib/types";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -27,15 +29,15 @@ export default async function DashboardPage() {
     redirect("/login?next=/dashboard");
   }
 
-  const { data: team } = await supabase
-    .from("teams")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle<Team>();
-
-  if (!team) {
-    redirect("/onboarding");
+  const session = await getStadiumSession(supabase, user.id);
+  if (!session.ok) {
+    if (session.status === 400) {
+      redirect("/onboarding");
+    }
+    throw new Error(session.message);
   }
+  const team = session.team;
+  const sLv = clampStadiumLevel(team.stadium_level);
 
   const { data: recent } = await supabase
     .from("matches")
@@ -63,7 +65,10 @@ export default async function DashboardPage() {
     { label: "Cash", value: team.cash.toLocaleString() },
     { label: "Gems", value: team.gems.toLocaleString() },
     { label: "Record", value: recordLabel },
-    { label: "Stadium", value: `Lv ${team.stadium_level}` },
+    {
+      label: "Stadium",
+      value: `Lv ${sLv} · ${stadiumDailyIncomeCash(sLv).toLocaleString()}/day`,
+    },
     { label: "Training", value: `Lv ${team.training_level}` },
     { label: "Coaching", value: `Lv ${team.coaching_level}` },
   ] as const;

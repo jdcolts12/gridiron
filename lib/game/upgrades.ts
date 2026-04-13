@@ -1,4 +1,4 @@
-import { facilityMultiplier } from "@/lib/game/facilityBonuses";
+import { STADIUM_MAX_LEVEL } from "@/lib/game/stadium";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Team } from "@/lib/types";
 
@@ -39,36 +39,11 @@ export function upgradeDurationMs(fromLevel: number): number {
   return 45_000 + fromLevel * 30_000;
 }
 
-/** How many upcoming steps to show on the stadium roadmap UI. */
-export const FACILITY_PREVIEW_STEPS = 6;
-
-export type FacilityPreviewRow = {
-  toLevel: number;
-  cost: number;
-  durationMs: number;
-  /** Simulator power multiplier once this level is reached. */
-  multiplier: number;
-};
-
-/** Next `stepCount` single-step upgrades from `currentLevel` (capped at max level). */
-export function previewFacilityUpgrades(
-  type: FacilityType,
-  currentLevel: number,
-  stepCount: number
-): FacilityPreviewRow[] {
-  const out: FacilityPreviewRow[] = [];
-  for (let i = 1; i <= stepCount; i++) {
-    const toLevel = currentLevel + i;
-    if (toLevel > MAX_FACILITY_LEVEL) break;
-    const fromLevel = toLevel - 1;
-    out.push({
-      toLevel,
-      cost: upgradeCostCash(fromLevel),
-      durationMs: upgradeDurationMs(fromLevel),
-      multiplier: facilityMultiplier(type, toLevel),
-    });
+function capUpgradeTargetLevel(type: FacilityType, toLevel: number): number {
+  if (type === "stadium") {
+    return Math.min(toLevel, STADIUM_MAX_LEVEL);
   }
-  return out;
+  return Math.min(toLevel, MAX_FACILITY_LEVEL);
 }
 
 /**
@@ -93,9 +68,10 @@ export async function applyDueUpgrades(
   for (const u of due) {
     if (!isFacilityType(u.type)) continue;
     const col = facilityLevelColumn(u.type);
+    const targetLevel = capUpgradeTargetLevel(u.type, u.to_level);
     const { error: teamErr } = await supabase
       .from("teams")
-      .update({ [col]: u.to_level })
+      .update({ [col]: targetLevel })
       .eq("id", teamId);
     if (teamErr) continue;
     await supabase.from("upgrades").update({ completed: true }).eq("id", u.id);

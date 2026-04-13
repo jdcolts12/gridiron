@@ -1,46 +1,20 @@
 "use client";
 
 import {
-  facilityEffectDescription,
-  facilityEffectTitle,
-  facilityMultiplier,
-} from "@/lib/game/facilityBonuses";
-import {
-  type FacilityType,
-  FACILITY_TYPES,
-  FACILITY_PREVIEW_STEPS,
-  MAX_FACILITY_LEVEL,
-  currentLevelForType,
-  previewFacilityUpgrades,
-  upgradeCostCash,
-  upgradeDurationMs,
-} from "@/lib/game/upgrades";
+  clampStadiumLevel,
+  previewStadiumUpgrades,
+  stadiumDailyIncomeCash,
+  stadiumFanCapacity,
+  stadiumPerformanceMultiplier,
+  stadiumUpgradeCostCash,
+  stadiumUpgradeDurationMs,
+  STADIUM_MAX_LEVEL,
+  type StadiumState,
+} from "@/lib/game/stadium";
 import type { Team, Upgrade } from "@/lib/types";
 import { useCallback, useEffect, useState } from "react";
 
-const FACILITY_COPY: Record<
-  FacilityType,
-  { title: string; short: string; glyph: string; panel: string }
-> = {
-  stadium: {
-    title: "Stadium",
-    short: "Crowd & facilities help your defense at home.",
-    glyph: "🏟️",
-    panel: "border-amber-800/60 bg-gradient-to-b from-amber-950/40 to-zinc-950/80",
-  },
-  training: {
-    title: "Training complex",
-    short: "Line play, conditioning, and trench control.",
-    glyph: "🏋️",
-    panel: "border-sky-800/60 bg-gradient-to-b from-sky-950/35 to-zinc-950/80",
-  },
-  coaching: {
-    title: "Coaching staff",
-    short: "Game planning and offensive execution.",
-    glyph: "📋",
-    panel: "border-violet-800/60 bg-gradient-to-b from-violet-950/35 to-zinc-950/80",
-  },
-};
+const PREVIEW_ROWS = 10;
 
 function formatRemaining(completesAt: string, tick: number): string {
   void tick;
@@ -61,138 +35,145 @@ function formatDurationMs(ms: number): string {
   return m > 0 ? `${m}m ${r}s` : `${r}s`;
 }
 
-function multLabel(m: number): string {
-  return `×${m.toFixed(2)}`;
-}
+type ApiStadiumPayload = {
+  ok?: boolean;
+  team?: Team;
+  stadium?: StadiumState;
+  activeUpgrade?: Upgrade | null;
+  income_applied?: number;
+  error?: string;
+};
 
 type Props = {
   initialTeam: Team;
-  initialActive: Upgrade[];
+  initialStadium: StadiumState;
+  initialUpgrade: Upgrade | null;
+  initialIncomeApplied: number;
 };
 
-export function StadiumClient({ initialTeam, initialActive }: Props) {
+export function StadiumClient({
+  initialTeam,
+  initialStadium,
+  initialUpgrade,
+  initialIncomeApplied,
+}: Props) {
   const [team, setTeam] = useState(initialTeam);
-  const [active, setActive] = useState(initialActive);
+  const [stadium, setStadium] = useState(initialStadium);
+  const [activeUpgrade, setActiveUpgrade] = useState<Upgrade | null>(
+    initialUpgrade
+  );
   const [error, setError] = useState<string | null>(null);
-  const [busyType, setBusyType] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
+  const [incomeNote, setIncomeNote] = useState<string | null>(
+    initialIncomeApplied > 0
+      ? `+${initialIncomeApplied.toLocaleString()} stadium income credited`
+      : null
+  );
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/upgrade");
-    const data = (await res.json()) as {
-      ok?: boolean;
-      team?: Team;
-      activeUpgrades?: Upgrade[];
-    };
-    if (data.ok && data.team) {
-      setTeam(data.team);
-      setActive(data.activeUpgrades ?? []);
+    const res = await fetch("/api/stadium");
+    const data = (await res.json()) as ApiStadiumPayload;
+    if (!res.ok || !data.ok || !data.team || !data.stadium) {
+      return;
+    }
+    setTeam(data.team);
+    setStadium(data.stadium);
+    setActiveUpgrade(data.activeUpgrade ?? null);
+    if (data.income_applied && data.income_applied > 0) {
+      setIncomeNote(
+        `+${data.income_applied.toLocaleString()} stadium income credited`
+      );
     }
   }, []);
 
   useEffect(() => {
-    if (active.length === 0) return;
+    if (!activeUpgrade) return;
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [active.length]);
+  }, [activeUpgrade]);
 
   useEffect(() => {
-    if (active.length === 0) return;
+    if (!activeUpgrade) return;
     const id = setInterval(() => {
       void refresh();
     }, 5000);
     return () => clearInterval(id);
-  }, [active.length, refresh]);
+  }, [activeUpgrade, refresh]);
 
-  async function start(type: FacilityType) {
+  useEffect(() => {
+    if (!incomeNote) return;
+    const t = setTimeout(() => setIncomeNote(null), 8000);
+    return () => clearTimeout(t);
+  }, [incomeNote]);
+
+  async function startUpgrade() {
     setError(null);
-    setBusyType(type);
+    setBusy(true);
     try {
-      const res = await fetch("/api/upgrade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
-      });
-      const data = (await res.json()) as { ok?: boolean; error?: string; team?: Team };
+      const res = await fetch("/api/stadium", { method: "POST" });
+      const data = (await res.json()) as ApiStadiumPayload;
       if (!res.ok || !data.ok) {
-        setError(data.error ?? "Upgrade failed");
+        setError(data.error ?? "Could not start upgrade");
         return;
       }
       if (data.team) setTeam(data.team);
+      if (data.stadium) setStadium(data.stadium);
       await refresh();
     } finally {
-      setBusyType(null);
+      setBusy(false);
     }
   }
 
-  const activeByType = Object.fromEntries(active.map((u) => [u.type, u])) as Record<
-    string,
-    Upgrade | undefined
-  >;
+  const lv = clampStadiumLevel(team.stadium_level);
+  const atMax = lv >= STADIUM_MAX_LEVEL;
+  const nextCost = atMax ? 0 : stadiumUpgradeCostCash(lv);
+  const nextDuration = atMax ? 0 : stadiumUpgradeDurationMs(lv);
+  const previewRows = previewStadiumUpgrades(lv, PREVIEW_ROWS);
+
+  const nextFan = atMax ? stadium.fan_capacity : stadiumFanCapacity(lv + 1);
+  const nextIncome = atMax
+    ? stadium.daily_income_cash
+    : stadiumDailyIncomeCash(lv + 1);
+  const nextPerf = atMax
+    ? stadium.performance_multiplier
+    : stadiumPerformanceMultiplier(lv + 1);
 
   return (
-    <div className="space-y-10">
+    <div className="mx-auto max-w-2xl space-y-8">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white">Stadium & facilities</h1>
+        <h1 className="text-2xl font-semibold text-white">Stadium</h1>
         <p className="text-sm text-zinc-400">
           {team.name} · Cash{" "}
           <span className="text-zinc-200">{team.cash.toLocaleString()}</span>
         </p>
-        <p className="max-w-2xl text-sm text-zinc-500">
-          Three buildings define how your club is rated inside the match simulator.
-          Below is your current footprint and a roadmap of the next upgrades—cost,
-          build time, and the power multiplier at each target level.
+        <p className="text-sm text-zinc-500">
+          Levels 1–10. Each level raises fan capacity, daily passive income, and
+          home defensive performance in match simulations. Upgrades cost cash
+          and finish after a real-time timer.
         </p>
       </div>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Your facilities
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {FACILITY_TYPES.map((type) => {
-            const lv = currentLevelForType(team, type);
-            const m = facilityMultiplier(type, lv);
-            const { title, short, glyph, panel } = FACILITY_COPY[type];
-            return (
-              <div
-                key={type}
-                className={`rounded-xl border p-4 ${panel}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-3xl leading-none" aria-hidden>
-                    {glyph}
-                  </span>
-                  <span className="rounded-full bg-zinc-950/60 px-2 py-0.5 font-mono text-xs text-zinc-300">
-                    Lv {lv}
-                  </span>
-                </div>
-                <h3 className="mt-3 font-medium text-white">{title}</h3>
-                <p className="mt-1 text-xs text-zinc-400">{short}</p>
-                <p className="mt-3 text-sm text-zinc-300">
-                  <span className="text-zinc-500">{facilityEffectTitle(type)}: </span>
-                  <span className="font-mono text-emerald-400/90">{multLabel(m)}</span>
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {incomeNote && (
+        <p
+          className="rounded-md border border-emerald-900/50 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-200/90"
+          role="status"
+        >
+          {incomeNote}
+        </p>
+      )}
 
-      {active.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-amber-900/40 bg-amber-950/20 p-4">
-          <h2 className="text-sm font-medium text-amber-200/90">In progress</h2>
-          <ul className="space-y-2 text-sm text-zinc-300">
-            {active.map((u) => (
-              <li key={u.id} className="flex flex-wrap justify-between gap-2">
-                <span className="capitalize">{u.type}</span>
-                <span className="text-zinc-400">
-                  Lv {u.from_level} → {u.to_level} ·{" "}
-                  {formatRemaining(u.completes_at, tick)} left
-                </span>
-              </li>
-            ))}
-          </ul>
+      {activeUpgrade && (
+        <div className="rounded-xl border border-amber-800/50 bg-amber-950/25 p-4">
+          <h2 className="text-sm font-medium text-amber-200">Upgrade in progress</h2>
+          <p className="mt-2 text-sm text-zinc-300">
+            Expanding to level{" "}
+            <span className="font-mono text-white">{activeUpgrade.to_level}</span>
+            · {formatRemaining(activeUpgrade.completes_at, tick)} remaining
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            You keep current bonuses until the timer completes.
+          </p>
         </div>
       )}
 
@@ -202,133 +183,126 @@ export function StadiumClient({ initialTeam, initialActive }: Props) {
         </p>
       )}
 
-      <section className="space-y-6">
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Current level
+            </p>
+            <p className="mt-1 text-4xl font-semibold tabular-nums text-white">
+              {stadium.level}
+              <span className="text-lg font-normal text-zinc-500">
+                {" "}
+                / {STADIUM_MAX_LEVEL}
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={atMax || !!activeUpgrade || team.cash < nextCost || busy}
+            onClick={() => void startUpgrade()}
+            className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy
+              ? "Starting…"
+              : atMax
+                ? "Max level"
+                : activeUpgrade
+                  ? "Upgrade running"
+                  : `Upgrade · ${nextCost.toLocaleString()} · ${formatDurationMs(nextDuration)}`}
+          </button>
+        </div>
+
+        <dl className="mt-6 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
+            <dt className="text-xs text-zinc-500">Fan capacity</dt>
+            <dd className="mt-1 text-lg font-medium tabular-nums text-zinc-100">
+              {stadium.fan_capacity.toLocaleString()}
+            </dd>
+            {!atMax && (
+              <dd className="mt-0.5 text-xs text-emerald-400/80">
+                → {nextFan.toLocaleString()} at Lv {lv + 1}
+              </dd>
+            )}
+          </div>
+          <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
+            <dt className="text-xs text-zinc-500">Income / day</dt>
+            <dd className="mt-1 text-lg font-medium tabular-nums text-zinc-100">
+              {stadium.daily_income_cash.toLocaleString()} cash
+            </dd>
+            {!atMax && (
+              <dd className="mt-0.5 text-xs text-emerald-400/80">
+                → {nextIncome.toLocaleString()} at Lv {lv + 1}
+              </dd>
+            )}
+          </div>
+          <div className="rounded-lg bg-zinc-950/60 px-3 py-3">
+            <dt className="text-xs text-zinc-500">Home defense (sim)</dt>
+            <dd className="mt-1 text-lg font-medium tabular-nums text-emerald-400/90">
+              ×{stadium.performance_multiplier.toFixed(2)}
+            </dd>
+            {!atMax && (
+              <dd className="mt-0.5 text-xs text-emerald-400/80">
+                → ×{nextPerf.toFixed(2)} at Lv {lv + 1}
+              </dd>
+            )}
+          </div>
+        </dl>
+      </section>
+
+      <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Upgrades & roadmap
+          Upgrade roadmap
         </h2>
-
-        <div className="space-y-8">
-          {FACILITY_TYPES.map((type) => {
-            const lv = currentLevelForType(team, type);
-            const atMax = lv >= MAX_FACILITY_LEVEL;
-            const cost = upgradeCostCash(lv);
-            const dur = upgradeDurationMs(lv);
-            const busy = busyType === type;
-            const inProg = activeByType[type];
-            const { title, glyph, panel } = FACILITY_COPY[type];
-            const nowMult = facilityMultiplier(type, lv);
-            const nextMult = atMax ? nowMult : facilityMultiplier(type, lv + 1);
-            const previewRows = previewFacilityUpgrades(
-              type,
-              lv,
-              FACILITY_PREVIEW_STEPS
-            );
-
-            return (
-              <div
-                key={type}
-                className={`overflow-hidden rounded-xl border ${panel}`}
-              >
-                <div className="border-b border-zinc-800/80 p-4 sm:flex sm:items-start sm:justify-between sm:gap-4">
-                  <div className="flex gap-3">
-                    <span className="text-3xl" aria-hidden>
-                      {glyph}
-                    </span>
-                    <div>
-                      <h3 className="text-lg font-medium text-white">{title}</h3>
-                      <p className="mt-1 text-sm text-zinc-400">
-                        {facilityEffectDescription(type)}
-                      </p>
-                      <p className="mt-2 text-sm text-zinc-300">
-                        Now:{" "}
-                        <span className="font-mono text-emerald-400/90">
-                          {multLabel(nowMult)}
-                        </span>{" "}
-                        {facilityEffectTitle(type).toLowerCase()} · Level{" "}
-                        <span className="text-zinc-100">{lv}</span>
-                        {!atMax && (
-                          <>
-                            {" "}
-                            → next{" "}
-                            <span className="font-mono text-emerald-300/90">
-                              {multLabel(nextMult)}
-                            </span>{" "}
-                            at Lv {lv + 1}
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={atMax || !!inProg || team.cash < cost || busy}
-                    onClick={() => void start(type)}
-                    className="mt-4 w-full shrink-0 rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0 sm:w-auto"
-                  >
-                    {busy
-                      ? "Starting…"
-                      : inProg
-                        ? "Upgrade in progress"
-                        : atMax
-                          ? "Max level"
-                          : `Start upgrade · ${cost.toLocaleString()} cash · ${formatDurationMs(dur)}`}
-                  </button>
-                </div>
-
-                <div className="p-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    Next steps (preview)
-                  </p>
-                  {previewRows.length === 0 ? (
-                    <p className="text-sm text-zinc-500">
-                      No further levels (max {MAX_FACILITY_LEVEL}).
-                    </p>
-                  ) : (
-                    <div className="overflow-x-auto rounded-lg border border-zinc-800/80 bg-zinc-950/40">
-                      <table className="w-full min-w-[520px] text-left text-xs sm:text-sm">
-                        <thead className="border-b border-zinc-800 bg-zinc-900/50 text-zinc-400">
-                          <tr>
-                            <th className="px-3 py-2 font-medium">Reach level</th>
-                            <th className="px-3 py-2 font-medium">
-                              {facilityEffectTitle(type)} (sim)
-                            </th>
-                            <th className="px-3 py-2 font-medium text-right">
-                              Cost
-                            </th>
-                            <th className="px-3 py-2 font-medium text-right">
-                              Build time
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-800/80 text-zinc-300">
-                          {previewRows.map((row) => (
-                            <tr key={row.toLevel}>
-                              <td className="px-3 py-2 font-mono text-zinc-200">
-                                {row.toLevel}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-emerald-400/90">
-                                {multLabel(row.multiplier)}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                {row.cost.toLocaleString()}
-                              </td>
-                              <td className="px-3 py-2 text-right text-zinc-400">
-                                {formatDurationMs(row.durationMs)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs text-zinc-600">
-                    Each row is one upgrade job. Cost and time are for that single
-                    step; multiplier is your rating after that level completes.
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+        <p className="text-xs text-zinc-600">
+          Each row is one paid upgrade job. Income is credited in full-day chunks
+          when you load the stadium or hub (up to 14 days backlog).
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-zinc-800">
+          <table className="w-full min-w-[480px] text-left text-sm">
+            <thead className="border-b border-zinc-800 bg-zinc-900/60 text-xs text-zinc-400">
+              <tr>
+                <th className="px-3 py-2 font-medium">Reach Lv</th>
+                <th className="px-3 py-2 font-medium">Fans</th>
+                <th className="px-3 py-2 font-medium">$/day</th>
+                <th className="px-3 py-2 font-medium">Def ×</th>
+                <th className="px-3 py-2 font-medium text-right">Cost</th>
+                <th className="px-3 py-2 font-medium text-right">Timer</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800 text-zinc-300">
+              {previewRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-4 text-center text-zinc-500">
+                    Stadium is maxed out.
+                  </td>
+                </tr>
+              ) : (
+                previewRows.map((row) => (
+                  <tr key={row.to_level}>
+                    <td className="px-3 py-2 font-mono text-zinc-200">
+                      {row.to_level}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums">
+                      {row.fan_capacity.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums">
+                      {row.daily_income_cash.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-emerald-400/90">
+                      ×{row.performance_multiplier.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {row.cost_cash.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-500">
+                      {formatDurationMs(row.duration_ms)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>

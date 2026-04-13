@@ -1,4 +1,5 @@
 import { FACILITY_BONUS_RATE } from "@/lib/game/facilityBonuses";
+import { clampStadiumLevel } from "@/lib/game/stadium";
 import type { Player, Team } from "@/lib/types";
 
 /** Team row plus full squad for power calculations and event attribution. */
@@ -104,7 +105,8 @@ function computePowers(
   }
 
   const defenseBase = avg(def.map((p) => p.strength + p.stamina));
-  const stadiumBonus = 1 + team.stadium_level * FACILITY_BONUS_RATE.stadium;
+  const stadiumLv = clampStadiumLevel(team.stadium_level);
+  const stadiumBonus = 1 + stadiumLv * FACILITY_BONUS_RATE.stadium;
   const defense = defenseBase * stadiumBonus;
 
   const trenchBase = avg(trench.map((p) => p.passing + p.stamina));

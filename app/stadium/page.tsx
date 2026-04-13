@@ -1,6 +1,5 @@
-import { applyDueUpgrades } from "@/lib/game/upgrades";
+import { getStadiumSession } from "@/lib/game/stadiumSession";
 import { createClient } from "@/lib/supabase/server";
-import type { Team, Upgrade } from "@/lib/types";
 import { redirect } from "next/navigation";
 import { StadiumClient } from "./StadiumClient";
 
@@ -14,33 +13,20 @@ export default async function StadiumPage() {
     redirect("/login?next=/stadium");
   }
 
-  const { data: team } = await supabase
-    .from("teams")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle<Team>();
-
-  if (!team) {
-    redirect("/onboarding");
+  const session = await getStadiumSession(supabase, user.id);
+  if (!session.ok) {
+    if (session.status === 400) {
+      redirect("/onboarding");
+    }
+    throw new Error(session.message);
   }
 
-  await applyDueUpgrades(supabase, team.id);
-
-  const { data: fresh } = await supabase
-    .from("teams")
-    .select("*")
-    .eq("id", team.id)
-    .maybeSingle<Team>();
-
-  const t = fresh ?? team;
-
-  const { data: active } = await supabase
-    .from("upgrades")
-    .select("*")
-    .eq("team_id", t.id)
-    .eq("completed", false)
-    .order("completes_at", { ascending: true })
-    .returns<Upgrade[]>();
-
-  return <StadiumClient initialTeam={t} initialActive={active ?? []} />;
+  return (
+    <StadiumClient
+      initialTeam={session.team}
+      initialStadium={session.stadium}
+      initialUpgrade={session.activeUpgrade}
+      initialIncomeApplied={session.incomeApplied}
+    />
+  );
 }

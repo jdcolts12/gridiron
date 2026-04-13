@@ -22,6 +22,8 @@ export type Team = {
   training_level: number;
   coaching_level: number;
   league_points: number;
+  /** Last time full-day stadium income was credited (`004_stadium_income_and_cap`). */
+  stadium_income_last_collected_at?: string;
   created_at: string;
 };
 
