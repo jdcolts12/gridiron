@@ -1,66 +1,70 @@
-import type { Upgrade } from "@/lib/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Team } from "@/lib/types";
 
-/** Columns required to insert into `public.upgrades` (defaults cover the rest). */
-export type UpgradeInsert = Pick<
-  Upgrade,
-  "team_id" | "type" | "from_level" | "to_level" | "cost_cash" | "completes_at"
->;
+export const FACILITY_TYPES = ["stadium", "training", "coaching"] as const;
+export type FacilityType = (typeof FACILITY_TYPES)[number];
 
-/** Static definition for one node in the upgrade tree. */
-export type UpgradeDefinition = {
-  key: string;
-  tier: number;
-  costCash: number;
-  durationMs: number;
-  /** Parent key for dependency chains; undefined for root upgrades. */
-  requiresKey?: string;
-  requiresTier?: number;
-};
+export const MAX_FACILITY_LEVEL = 20;
 
-/**
- * Returns the full upgrade tree configuration (all tiers / keys).
- */
-export function getUpgradeTree(): UpgradeDefinition[] {
-  return [];
+export function isFacilityType(s: string): s is FacilityType {
+  return (FACILITY_TYPES as readonly string[]).includes(s);
+}
+
+/** DB column on `teams` for this facility upgrade type. */
+export function facilityLevelColumn(
+  type: FacilityType
+): keyof Pick<Team, "stadium_level" | "training_level" | "coaching_level"> {
+  switch (type) {
+    case "stadium":
+      return "stadium_level";
+    case "training":
+      return "training_level";
+    case "coaching":
+      return "coaching_level";
+  }
+}
+
+export function currentLevelForType(team: Team, type: FacilityType): number {
+  return team[facilityLevelColumn(type)];
+}
+
+/** Cash cost to go from `fromLevel` → `fromLevel + 1`. */
+export function upgradeCostCash(fromLevel: number): number {
+  return Math.max(50, 80 * fromLevel * fromLevel);
+}
+
+/** Wall-clock duration before the level applies. */
+export function upgradeDurationMs(fromLevel: number): number {
+  return 45_000 + fromLevel * 30_000;
 }
 
 /**
- * Looks up the definition for a key at a target tier.
+ * Apply any finished upgrades: bump facility level and mark rows complete.
+ * Safe to call often (GET stadium, POST start, etc.).
  */
-export function getUpgradeDef(
-  _key: string,
-  _tier: number
-): UpgradeDefinition | undefined {
-  return undefined;
-}
+export async function applyDueUpgrades(
+  supabase: SupabaseClient,
+  teamId: string
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const { data: due, error } = await supabase
+    .from("upgrades")
+    .select("*")
+    .eq("team_id", teamId)
+    .eq("completed", false)
+    .lte("completes_at", nowIso)
+    .order("completes_at", { ascending: true });
 
-/**
- * Whether the team may start this upgrade given current state.
- */
-export function canStartUpgrade(
-  _teamId: string,
-  _key: string,
-  _nextTier: number
-): boolean {
-  return false;
-}
+  if (error || !due?.length) return;
 
-/**
- * Builds payload for inserting into `public.upgrades`.
- * @param teamId - Owning team uuid
- * @param upgradeType - 'stadium' | 'training' | 'coaching'
- * @param fromLevel - Current facility level on the team
- * @param toLevel - Target level after upgrade
- * @param costCash - Cash charged when starting
- * @param completesAt - ISO timestamptz when the upgrade finishes
- */
-export function buildUpgradeRecord(
-  _teamId: string,
-  _upgradeType: string,
-  _fromLevel: number,
-  _toLevel: number,
-  _costCash: number,
-  _completesAt: string
-): UpgradeInsert | null {
-  return null;
+  for (const u of due) {
+    if (!isFacilityType(u.type)) continue;
+    const col = facilityLevelColumn(u.type);
+    const { error: teamErr } = await supabase
+      .from("teams")
+      .update({ [col]: u.to_level })
+      .eq("id", teamId);
+    if (teamErr) continue;
+    await supabase.from("upgrades").update({ completed: true }).eq("id", u.id);
+  }
 }
