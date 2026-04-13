@@ -5,17 +5,16 @@ import {
 } from "@/lib/game/stadium";
 import { applyDueUpgrades } from "@/lib/game/upgrades";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Team, Upgrade } from "@/lib/types";
+import type { Team } from "@/lib/types";
 
 export type StadiumSession = {
   team: Team;
   stadium: StadiumState;
-  activeUpgrade: Upgrade | null;
   incomeApplied: number;
 };
 
 /**
- * Finishes due upgrades, credits stadium income, loads active stadium build job.
+ * Finishes legacy timed upgrades, credits stadium ticket revenue.
  */
 export async function getStadiumSession(
   supabase: SupabaseClient,
@@ -68,20 +67,10 @@ export async function getStadiumSession(
     if (fresh) final = fresh;
   }
 
-  const { data: activeRows } = await supabase
-    .from("upgrades")
-    .select("*")
-    .eq("team_id", final.id)
-    .eq("type", "stadium")
-    .eq("completed", false)
-    .order("completes_at", { ascending: true })
-    .limit(1);
-
   return {
     ok: true,
     team: final,
     stadium: buildStadiumState(final.stadium_level),
-    activeUpgrade: (activeRows?.[0] as Upgrade | undefined) ?? null,
     incomeApplied: cashAdded,
   };
 }

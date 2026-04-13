@@ -25,7 +25,6 @@ export default async function StadiumPage() {
     <StadiumClient
       initialTeam={session.team}
       initialStadium={session.stadium}
-      initialUpgrade={session.activeUpgrade}
       initialIncomeApplied={session.incomeApplied}
     />
   );

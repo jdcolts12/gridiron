@@ -65,15 +65,33 @@ export async function applyDueUpgrades(
 
   if (error || !due?.length) return;
 
+  const { data: teamSnap } = await supabase
+    .from("teams")
+    .select("stadium_level, training_level, coaching_level")
+    .eq("id", teamId)
+    .maybeSingle();
+
   for (const u of due) {
     if (!isFacilityType(u.type)) continue;
     const col = facilityLevelColumn(u.type);
     const targetLevel = capUpgradeTargetLevel(u.type, u.to_level);
+
+    if (u.type === "stadium" && teamSnap && u.to_level <= teamSnap.stadium_level) {
+      await supabase.from("upgrades").update({ completed: true }).eq("id", u.id);
+      continue;
+    }
+
     const { error: teamErr } = await supabase
       .from("teams")
       .update({ [col]: targetLevel })
       .eq("id", teamId);
     if (teamErr) continue;
     await supabase.from("upgrades").update({ completed: true }).eq("id", u.id);
+
+    if (teamSnap) {
+      if (col === "stadium_level") teamSnap.stadium_level = targetLevel;
+      else if (col === "training_level") teamSnap.training_level = targetLevel;
+      else if (col === "coaching_level") teamSnap.coaching_level = targetLevel;
+    }
   }
 }

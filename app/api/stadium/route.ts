@@ -3,7 +3,6 @@ import {
   buildStadiumState,
   clampStadiumLevel,
   stadiumUpgradeCostCash,
-  stadiumUpgradeDurationMs,
   STADIUM_MAX_LEVEL,
 } from "@/lib/game/stadium";
 import { getStadiumSession } from "@/lib/game/stadiumSession";
@@ -12,7 +11,7 @@ import type { Team } from "@/lib/types";
 import { NextResponse } from "next/server";
 
 /**
- * GET /api/stadium — completes due upgrades, credits stadium income, returns stadium state + timer.
+ * GET /api/stadium — legacy upgrade cleanup, ticket revenue, current stadium state.
  */
 export async function GET() {
   try {
@@ -38,7 +37,6 @@ export async function GET() {
       ok: true,
       team: session.team,
       stadium: session.stadium,
-      activeUpgrade: session.activeUpgrade,
       income_applied: session.incomeApplied,
     });
   } catch (e) {
@@ -48,7 +46,7 @@ export async function GET() {
 }
 
 /**
- * POST /api/stadium — start next stadium upgrade (cost + timer).
+ * POST /api/stadium — buy next stadium level instantly (pay cash, no timer).
  */
 export async function POST() {
   try {
@@ -70,20 +68,13 @@ export async function POST() {
       );
     }
 
-    let { team } = session;
+    const { team } = session;
     const level = clampStadiumLevel(team.stadium_level);
 
     if (level >= STADIUM_MAX_LEVEL) {
       return NextResponse.json(
         { ok: false, error: `Stadium is max level (${STADIUM_MAX_LEVEL})` },
         { status: 400 }
-      );
-    }
-
-    if (session.activeUpgrade) {
-      return NextResponse.json(
-        { ok: false, error: "A stadium upgrade is already in progress" },
-        { status: 409 }
       );
     }
 
@@ -100,63 +91,34 @@ export async function POST() {
 
     const preCash = team.cash;
     const newCash = preCash - cost;
+    const newLevel = level + 1;
 
-    const { data: cashRow, error: cashErr } = await supabase
+    const { data: updated, error: upErr } = await supabase
       .from("teams")
-      .update({ cash: newCash })
+      .update({
+        stadium_level: newLevel,
+        cash: newCash,
+      })
       .eq("id", team.id)
+      .eq("stadium_level", level)
       .eq("cash", preCash)
-      .select("id")
-      .maybeSingle();
+      .select()
+      .maybeSingle<Team>();
 
-    if (cashErr || !cashRow) {
+    if (upErr || !updated) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Could not reserve funds; refresh and try again.",
+          error: "Could not complete expansion; refresh and try again.",
         },
         { status: 409 }
       );
     }
 
-    const completesAt = new Date(
-      Date.now() + stadiumUpgradeDurationMs(level)
-    ).toISOString();
-
-    const { data: upgradeRow, error: insErr } = await supabase
-      .from("upgrades")
-      .insert({
-        team_id: team.id,
-        type: "stadium",
-        from_level: level,
-        to_level: level + 1,
-        cost_cash: cost,
-        completes_at: completesAt,
-      })
-      .select()
-      .single();
-
-    if (insErr || !upgradeRow) {
-      await supabase.from("teams").update({ cash: preCash }).eq("id", team.id);
-      return NextResponse.json(
-        { ok: false, error: insErr?.message ?? "Failed to start upgrade" },
-        { status: 500 }
-      );
-    }
-
-    const { data: finalTeam } = await supabase
-      .from("teams")
-      .select("*")
-      .eq("id", team.id)
-      .maybeSingle<Team>();
-
-    const t = finalTeam ?? { ...team, cash: newCash };
-
     return NextResponse.json({
       ok: true,
-      upgrade: upgradeRow,
-      team: t,
-      stadium: buildStadiumState(t.stadium_level),
+      team: updated,
+      stadium: buildStadiumState(updated.stadium_level),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

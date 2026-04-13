@@ -11,39 +11,18 @@ import {
   stadiumFanCapacity,
   stadiumTierName,
   stadiumUpgradeCostCash,
-  stadiumUpgradeDurationMs,
   STADIUM_MAX_LEVEL,
   type StadiumState,
 } from "@/lib/game/stadium";
-import type { Team, Upgrade } from "@/lib/types";
+import type { Team } from "@/lib/types";
 import { useCallback, useEffect, useState } from "react";
 
 const PREVIEW_ROWS = 10;
-
-function formatRemaining(completesAt: string, tick: number): string {
-  void tick;
-  const ms = new Date(completesAt).getTime() - Date.now();
-  if (ms <= 0) return "Finishing…";
-  const s = Math.ceil(ms / 1000);
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  if (m >= 120) return `${Math.floor(m / 60)}h ${m % 60}m`;
-  if (m > 0) return `${m}m ${r}s`;
-  return `${r}s`;
-}
-
-function formatDurationMs(ms: number): string {
-  const s = Math.round(ms / 1000);
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return m > 0 ? `${m}m ${r}s` : `${r}s`;
-}
 
 type ApiStadiumPayload = {
   ok?: boolean;
   team?: Team;
   stadium?: StadiumState;
-  activeUpgrade?: Upgrade | null;
   income_applied?: number;
   error?: string;
 };
@@ -51,24 +30,18 @@ type ApiStadiumPayload = {
 type Props = {
   initialTeam: Team;
   initialStadium: StadiumState;
-  initialUpgrade: Upgrade | null;
   initialIncomeApplied: number;
 };
 
 export function StadiumClient({
   initialTeam,
   initialStadium,
-  initialUpgrade,
   initialIncomeApplied,
 }: Props) {
   const [team, setTeam] = useState(initialTeam);
   const [stadium, setStadium] = useState(initialStadium);
-  const [activeUpgrade, setActiveUpgrade] = useState<Upgrade | null>(
-    initialUpgrade
-  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tick, setTick] = useState(0);
   const [incomeNote, setIncomeNote] = useState<string | null>(
     initialIncomeApplied > 0
       ? `+${formatDollars(initialIncomeApplied)} ticket revenue collected`
@@ -83,7 +56,6 @@ export function StadiumClient({
     }
     setTeam(data.team);
     setStadium(data.stadium);
-    setActiveUpgrade(data.activeUpgrade ?? null);
     if (data.income_applied && data.income_applied > 0) {
       setIncomeNote(
         `+${formatDollars(data.income_applied)} ticket revenue collected`
@@ -92,33 +64,19 @@ export function StadiumClient({
   }, []);
 
   useEffect(() => {
-    if (!activeUpgrade) return;
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, [activeUpgrade]);
-
-  useEffect(() => {
-    if (!activeUpgrade) return;
-    const id = setInterval(() => {
-      void refresh();
-    }, 5000);
-    return () => clearInterval(id);
-  }, [activeUpgrade, refresh]);
-
-  useEffect(() => {
     if (!incomeNote) return;
     const t = setTimeout(() => setIncomeNote(null), 8000);
     return () => clearTimeout(t);
   }, [incomeNote]);
 
-  async function startUpgrade() {
+  async function expandStadium() {
     setError(null);
     setBusy(true);
     try {
       const res = await fetch("/api/stadium", { method: "POST" });
       const data = (await res.json()) as ApiStadiumPayload;
       if (!res.ok || !data.ok) {
-        setError(data.error ?? "Could not start upgrade");
+        setError(data.error ?? "Could not expand stadium");
         return;
       }
       if (data.team) setTeam(data.team);
@@ -132,7 +90,6 @@ export function StadiumClient({
   const lv = clampStadiumLevel(team.stadium_level);
   const atMax = lv >= STADIUM_MAX_LEVEL;
   const nextCost = atMax ? 0 : stadiumUpgradeCostCash(lv);
-  const nextDuration = atMax ? 0 : stadiumUpgradeDurationMs(lv);
   const previewRows = previewStadiumUpgrades(lv, PREVIEW_ROWS);
 
   const nextFan = atMax ? stadium.fan_capacity : stadiumFanCapacity(lv + 1);
@@ -145,10 +102,6 @@ export function StadiumClient({
   const nextCrowd = atMax
     ? stadium.crowd_noise_label
     : stadiumCrowdNoiseLabel(lv + 1);
-
-  const upgradeTargetName = activeUpgrade
-    ? stadiumTierName(activeUpgrade.to_level)
-    : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -177,23 +130,21 @@ export function StadiumClient({
           </div>
           <button
             type="button"
-            disabled={atMax || !!activeUpgrade || team.cash < nextCost || busy}
-            onClick={() => void startUpgrade()}
+            disabled={atMax || team.cash < nextCost || busy}
+            onClick={() => void expandStadium()}
             className="shrink-0 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy
-              ? "Starting…"
+              ? "Expanding…"
               : atMax
                 ? "Stadium maxed"
-                : activeUpgrade
-                  ? "Expansion running"
-                  : `Expand · ${formatDollars(nextCost)} · ${formatDurationMs(nextDuration)}`}
+                : `Expand · ${formatDollars(nextCost)}`}
           </button>
         </div>
         <p className="text-sm leading-relaxed text-zinc-500">
           Pack the stands, sell tickets, and crank the crowd until visiting teams
-          can&apos;t hear the snap. Bigger venues take real money and construction
-          time—each expansion level is a new chapter for your franchise.
+          can&apos;t hear the snap. Pay the price and your venue levels up
+          immediately—no waiting on construction timers.
         </p>
       </header>
 
@@ -204,29 +155,6 @@ export function StadiumClient({
         >
           {incomeNote}
         </p>
-      )}
-
-      {activeUpgrade && (
-        <div className="rounded-xl border border-amber-800/50 bg-gradient-to-br from-amber-950/40 to-zinc-950/80 p-4">
-          <h2 className="text-sm font-semibold text-amber-200">
-            🏗️ Expansion in progress
-          </h2>
-          <p className="mt-2 text-sm text-zinc-300">
-            Building toward{" "}
-            <span className="font-medium text-white">
-              {upgradeTargetName ?? `level ${activeUpgrade.to_level}`}
-            </span>{" "}
-            <span className="text-zinc-500">
-              (level {activeUpgrade.to_level})
-            </span>
-            <span className="text-zinc-600"> · </span>
-            {formatRemaining(activeUpgrade.completes_at, tick)} left on the clock
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            Current ticket sales and home-field edge stay in place until the job
-            wraps.
-          </p>
-        </div>
       )}
 
       {error && (
@@ -249,7 +177,8 @@ export function StadiumClient({
             </dd>
             {!atMax && (
               <dd className="mt-1 text-xs text-emerald-400/85">
-                Next: {nextFan.toLocaleString()} seats at {stadiumTierName(lv + 1)}
+                Next: {nextFan.toLocaleString()} seats at{" "}
+                {stadiumTierName(lv + 1)}
               </dd>
             )}
           </div>
@@ -313,11 +242,12 @@ export function StadiumClient({
           <span aria-hidden>🏟️</span> Stadium expansion plan
         </h2>
         <p className="text-xs text-zinc-600">
-          Each row is one construction project. Ticket money pays out in full-day
-          chunks when you hit the stadium or hub (up to 14 days banked).
+          Each row is the next venue tier if you pay the cost. Ticket money pays
+          out in full-day chunks when you open the stadium or hub (up to 14 days
+          banked).
         </p>
         <div className="overflow-x-auto rounded-lg border border-zinc-800">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[560px] text-left text-sm">
             <thead className="border-b border-zinc-800 bg-zinc-900/70 text-xs text-zinc-400">
               <tr>
                 <th className="px-3 py-2 font-medium">Venue</th>
@@ -326,14 +256,13 @@ export function StadiumClient({
                 <th className="px-3 py-2 font-medium">🏟️ HFA</th>
                 <th className="px-3 py-2 font-medium">🔊 Crowd</th>
                 <th className="px-3 py-2 font-medium text-right">Cost</th>
-                <th className="px-3 py-2 font-medium text-right">Build</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800 text-zinc-300">
               {previewRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="px-3 py-4 text-center text-zinc-500"
                   >
                     You&apos;ve maxed the dynasty stadium. Time to defend the
@@ -365,9 +294,6 @@ export function StadiumClient({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatDollars(row.cost_cash)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-zinc-500">
-                      {formatDurationMs(row.duration_ms)}
                     </td>
                   </tr>
                 ))

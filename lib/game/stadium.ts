@@ -65,7 +65,7 @@ const MS_PER_DAY = 86_400_000;
 /** Avoid unbounded catch-up if someone returns after a long break. */
 const MAX_CATCH_UP_DAYS = 14;
 
-/** Snapshot for UI and API (derived from level + timers elsewhere). */
+/** Snapshot for UI and API (derived from stadium level). */
 export type StadiumState = {
   level: number;
   tier_name: string;
@@ -114,20 +114,12 @@ export function stadiumUpgradeCostCash(fromLevel: number): number {
   return Math.max(100, Math.round(180 * Math.pow(1.6, lv - 1)));
 }
 
-/** Real-time build duration for the next tier. */
-export function stadiumUpgradeDurationMs(fromLevel: number): number {
-  const lv = clampStadiumLevel(fromLevel);
-  if (lv >= STADIUM_MAX_LEVEL) return 0;
-  return 90_000 + lv * 60_000;
-}
-
 export type StadiumUpgradePreviewRow = {
   to_level: number;
   tier_name: string;
   home_field_advantage_percent: number;
   crowd_noise_label: string;
   cost_cash: number;
-  duration_ms: number;
   fan_capacity: number;
   daily_income_cash: number;
   performance_multiplier: number;
@@ -149,7 +141,6 @@ export function previewStadiumUpgrades(
       home_field_advantage_percent: homeFieldAdvantagePercent(to),
       crowd_noise_label: stadiumCrowdNoiseLabel(to),
       cost_cash: stadiumUpgradeCostCash(from),
-      duration_ms: stadiumUpgradeDurationMs(from),
       fan_capacity: stadiumFanCapacity(to),
       daily_income_cash: stadiumDailyIncomeCash(to),
       performance_multiplier: stadiumPerformanceMultiplier(to),
