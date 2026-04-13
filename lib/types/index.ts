@@ -56,6 +56,17 @@ export type Match = {
   played_at: string;
 };
 
+/** `public.player_upgrade_jobs` — timed stat training */
+export type PlayerUpgradeJob = {
+  id: string;
+  player_id: string;
+  team_id: string;
+  cost_cash: number;
+  completes_at: string;
+  completed: boolean;
+  created_at: string;
+};
+
 /** `public.upgrades` — type: stadium | training | coaching */
 export type Upgrade = {
   id: string;

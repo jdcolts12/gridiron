@@ -1,14 +1,11 @@
-import { formatDollars } from "@/lib/format/money";
+import {
+  applyDuePlayerUpgrades,
+  teamOverall,
+} from "@/lib/game/squadHelpers";
 import { createClient } from "@/lib/supabase/server";
-import type { Player, Team } from "@/lib/types";
+import type { Player, PlayerUpgradeJob, Team } from "@/lib/types";
 import { redirect } from "next/navigation";
-
-function byPosThenName(a: Player, b: Player) {
-  return (
-    a.position.localeCompare(b.position) ||
-    a.name.localeCompare(b.name)
-  );
-}
+import SquadClient from "./SquadClient";
 
 export default async function SquadPage() {
   const supabase = createClient();
@@ -30,62 +27,49 @@ export default async function SquadPage() {
     redirect("/onboarding");
   }
 
+  try {
+    await applyDuePlayerUpgrades(supabase, team.id);
+  } catch {
+    /* migration 005 may not be applied locally */
+  }
+
   const { data: players } = await supabase
     .from("players")
     .select("*")
     .eq("team_id", team.id)
     .returns<Player[]>();
 
-  const roster = (players ?? []).slice().sort(byPosThenName);
+  const roster = players ?? [];
+
+  let jobs: PlayerUpgradeJob[] = [];
+  const { data: jobRows, error: jobsErr } = await supabase
+    .from("player_upgrade_jobs")
+    .select("*")
+    .eq("team_id", team.id)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (!jobsErr && jobRows) {
+    jobs = jobRows as PlayerUpgradeJob[];
+  }
+
+  const teamOvr = teamOverall(roster);
 
   return (
     <div className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold text-white">Squad</h1>
         <p className="text-sm text-zinc-400">
-          {team.name} · {formatDollars(team.cash)} · Gems {team.gems}
+          Build your roster, train on timers, and climb team OVR.
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-800">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-zinc-900/60 text-zinc-300">
-            <tr>
-              <th className="px-4 py-2 font-medium">Pos</th>
-              <th className="px-4 py-2 font-medium">Player</th>
-              <th className="px-4 py-2 font-medium">SPD</th>
-              <th className="px-4 py-2 font-medium">STR</th>
-              <th className="px-4 py-2 font-medium">PSA</th>
-              <th className="px-4 py-2 font-medium">CTH</th>
-              <th className="px-4 py-2 font-medium">STA</th>
-              <th className="px-4 py-2 font-medium">Tier</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800">
-            {roster.map((p) => (
-              <tr key={p.id} className="text-zinc-200">
-                <td className="px-4 py-2 font-mono text-xs text-zinc-400">
-                  {p.position}
-                </td>
-                <td className="px-4 py-2">{p.name}</td>
-                <td className="px-4 py-2">{p.speed}</td>
-                <td className="px-4 py-2">{p.strength}</td>
-                <td className="px-4 py-2">{p.passing}</td>
-                <td className="px-4 py-2">{p.catching}</td>
-                <td className="px-4 py-2">{p.stamina}</td>
-                <td className="px-4 py-2">{p.tier}</td>
-              </tr>
-            ))}
-            {roster.length === 0 && (
-              <tr>
-                <td className="px-4 py-6 text-zinc-400" colSpan={8}>
-                  No players found for this team.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <SquadClient
+        initialTeam={team}
+        initialPlayers={roster}
+        initialJobs={jobs}
+        initialTeamOvr={teamOvr}
+      />
     </div>
   );
 }
