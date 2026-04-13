@@ -1,9 +1,26 @@
-import { fetchLeagueStandings } from "@/lib/game/league";
+import {
+  aggregateStandings,
+  fetchLeagueStandings,
+  formatRecordWLT,
+  type MatchMinimal,
+  type StandingRow,
+} from "@/lib/game/league";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { Team } from "@/lib/types";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
+async function standingsForTeamOnly(
+  supabase: ReturnType<typeof createClient>,
+  myTeam: Pick<Team, "id" | "name">
+): Promise<StandingRow[]> {
+  const { data: myMatches } = await supabase
+    .from("matches")
+    .select("home_team_id, away_team_id, winner_id")
+    .or(`home_team_id.eq.${myTeam.id},away_team_id.eq.${myTeam.id}`);
+  return aggregateStandings([myTeam], (myMatches ?? []) as MatchMinimal[]);
+}
 
 export default async function LeaguePage() {
   const supabase = createClient();
@@ -17,30 +34,30 @@ export default async function LeaguePage() {
 
   const { data: myTeam } = await supabase
     .from("teams")
-    .select("id, name, league_points")
+    .select("id, name")
     .eq("user_id", user.id)
-    .maybeSingle<Pick<Team, "id" | "name" | "league_points">>();
+    .maybeSingle<Pick<Team, "id" | "name">>();
 
   if (!myTeam) {
     redirect("/onboarding");
   }
 
-  let rows: Awaited<ReturnType<typeof fetchLeagueStandings>>["rows"] = [];
+  let rows: StandingRow[] = [];
   let warning: string | null = null;
 
   try {
     const admin = createServiceClient();
     const result = await fetchLeagueStandings(admin);
     if (result.error) {
-      rows = [myTeam];
       warning = result.error;
+      rows = await standingsForTeamOnly(supabase, myTeam);
     } else {
       rows = result.rows;
     }
   } catch {
-    rows = [myTeam];
     warning =
       "Set SUPABASE_SERVICE_ROLE_KEY on the server to load the full league table.";
+    rows = await standingsForTeamOnly(supabase, myTeam);
   }
 
   const myIndex = rows.findIndex((r) => r.id === myTeam.id);
@@ -51,14 +68,12 @@ export default async function LeaguePage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold text-white">League</h1>
         <p className="text-sm text-zinc-400">
-          Sorted by league points (3 for a win, 1 for a draw).{" "}
+          Standings by win percentage (wins ÷ games). Draws count as games
+          played but do not award points. Tiebreakers: wins, then team name.{" "}
           {myRank !== null && (
             <>
               You are{" "}
-              <span className="text-zinc-200">
-                #{myRank}
-              </span>
-              .
+              <span className="text-zinc-200">#{myRank}</span>.
             </>
           )}
         </p>
@@ -76,7 +91,8 @@ export default async function LeaguePage() {
             <tr>
               <th className="px-4 py-2 font-medium">#</th>
               <th className="px-4 py-2 font-medium">Team</th>
-              <th className="px-4 py-2 font-medium text-right">Pts</th>
+              <th className="px-4 py-2 font-medium text-right">Win %</th>
+              <th className="px-4 py-2 font-medium text-right">Record</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800">
@@ -103,7 +119,12 @@ export default async function LeaguePage() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">
-                    {r.league_points}
+                    {r.games === 0
+                      ? "—"
+                      : `${(r.win_pct * 100).toFixed(1)}%`}
+                  </td>
+                  <td className="px-4 py-2 text-right text-zinc-400 tabular-nums">
+                    {formatRecordWLT(r)}
                   </td>
                 </tr>
               );
@@ -116,7 +137,7 @@ export default async function LeaguePage() {
         <Link href="/match" className="text-emerald-400 hover:underline">
           Play matches
         </Link>{" "}
-        to earn points.
+        to build your record.
       </p>
     </div>
   );

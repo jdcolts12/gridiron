@@ -1,3 +1,4 @@
+import { summarizeTeamRecord } from "@/lib/game/league";
 import { createClient } from "@/lib/supabase/server";
 import type { Match, Team } from "@/lib/types";
 import Link from "next/link";
@@ -47,10 +48,21 @@ export default async function DashboardPage() {
   const recentList = recent ?? [];
   const last = lastMatchSummary(team.id, recentList);
 
+  const { data: recordMatches } = await supabase
+    .from("matches")
+    .select("home_team_id, away_team_id, winner_id")
+    .or(`home_team_id.eq.${team.id},away_team_id.eq.${team.id}`);
+
+  const rec = summarizeTeamRecord(team.id, recordMatches ?? []);
+  const recordLabel =
+    rec.games === 0
+      ? "No games yet"
+      : `${rec.wins}–${rec.losses}–${rec.draws} (${(rec.win_pct * 100).toFixed(1)}%)`;
+
   const cards = [
     { label: "Cash", value: team.cash.toLocaleString() },
     { label: "Gems", value: team.gems.toLocaleString() },
-    { label: "League pts", value: team.league_points.toLocaleString() },
+    { label: "Record", value: recordLabel },
     { label: "Stadium", value: `Lv ${team.stadium_level}` },
     { label: "Training", value: `Lv ${team.training_level}` },
     { label: "Coaching", value: `Lv ${team.coaching_level}` },

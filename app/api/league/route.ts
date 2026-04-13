@@ -1,10 +1,15 @@
-import { fetchLeagueStandings } from "@/lib/game/league";
+import {
+  aggregateStandings,
+  fetchLeagueStandings,
+  type MatchMinimal,
+  type StandingRow,
+} from "@/lib/game/league";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { NextResponse } from "next/server";
 
 /**
- * GET /api/league — standings (needs `SUPABASE_SERVICE_ROLE_KEY` to see all teams).
+ * GET /api/league — standings by win % (needs `SUPABASE_SERVICE_ROLE_KEY` for full table).
  */
 export async function GET() {
   try {
@@ -20,7 +25,7 @@ export async function GET() {
 
     const { data: myTeam, error: teamErr } = await supabase
       .from("teams")
-      .select("id, name, league_points")
+      .select("id, name")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -31,7 +36,7 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "No team" }, { status: 400 });
     }
 
-    let standings: Awaited<ReturnType<typeof fetchLeagueStandings>>["rows"] = [];
+    let standings: StandingRow[] = [];
     let standingsWarning: string | null = null;
     let fullTable = false;
 
@@ -39,29 +44,31 @@ export async function GET() {
       const admin = createServiceClient();
       const result = await fetchLeagueStandings(admin);
       if (result.error) {
-        standings = [
-          {
-            id: myTeam.id,
-            name: myTeam.name,
-            league_points: myTeam.league_points,
-          },
-        ];
         standingsWarning = result.error;
+        const { data: myMatches } = await supabase
+          .from("matches")
+          .select("home_team_id, away_team_id, winner_id")
+          .or(`home_team_id.eq.${myTeam.id},away_team_id.eq.${myTeam.id}`);
+        standings = aggregateStandings(
+          [myTeam],
+          (myMatches ?? []) as MatchMinimal[]
+        );
         fullTable = false;
       } else {
         standings = result.rows;
         fullTable = result.rows.length > 0;
       }
     } catch {
-      standings = [
-        {
-          id: myTeam.id,
-          name: myTeam.name,
-          league_points: myTeam.league_points,
-        },
-      ];
       standingsWarning =
         "Set SUPABASE_SERVICE_ROLE_KEY on the server to load the full league table.";
+      const { data: myMatches } = await supabase
+        .from("matches")
+        .select("home_team_id, away_team_id, winner_id")
+        .or(`home_team_id.eq.${myTeam.id},away_team_id.eq.${myTeam.id}`);
+      standings = aggregateStandings(
+        [myTeam],
+        (myMatches ?? []) as MatchMinimal[]
+      );
       fullTable = false;
     }
 

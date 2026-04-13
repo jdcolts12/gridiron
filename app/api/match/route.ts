@@ -246,25 +246,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const homeDelta =
-      result.winnerId === myTeam.id ? 3 : result.winnerId === null ? 1 : 0;
-    const awayDelta =
-      result.winnerId === opponentTeamId ? 3 : result.winnerId === null ? 1 : 0;
-
-    await admin
-      .from("teams")
-      .update({
-        league_points: (myTeam.league_points ?? 0) + homeDelta,
-      })
-      .eq("id", myTeam.id);
-
-    await admin
-      .from("teams")
-      .update({
-        league_points: (oppTeam.league_points ?? 0) + awayDelta,
-      })
-      .eq("id", opponentTeamId);
-
     return NextResponse.json({ ok: true, match: matchRow });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
